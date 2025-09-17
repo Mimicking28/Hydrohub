@@ -3,14 +3,14 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:intl/intl.dart';
 
-class UpdateDeliveryStock extends StatefulWidget {
-  const UpdateDeliveryStock({super.key});
+class UpdateReturnStock extends StatefulWidget {
+  const UpdateReturnStock({super.key});
 
   @override
-  State<UpdateDeliveryStock> createState() => _UpdateStockState();
+  State<UpdateReturnStock> createState() => _UpdateStockState();
 }
 
-class _UpdateStockState extends State<UpdateDeliveryStock> {
+class _UpdateStockState extends State<UpdateReturnStock> {
   List<dynamic> stocks = [];
   bool isLoading = true;
 
@@ -32,8 +32,8 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
       final allStocks = json.decode(response.body);
 
       setState(() {
-        // ✅ filter only delivered stocks
-        stocks = allStocks.where((stock) => stock["stock_type"] == "delivered").toList();
+        // ✅ filter only returned stocks
+        stocks = allStocks.where((stock) => stock["stock_type"] == "returned").toList();
         isLoading = false;
       });
     } else {
@@ -149,7 +149,7 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
                 ),
                 const SizedBox(height: 10),
 
-                // Reason (only for delivered logs)
+                // Reason (only for returned logs)
                 DropdownButton<String>(
                   value: selectedReason,
                   hint: const Text("Reason", style: TextStyle(color: Colors.white)),
@@ -218,7 +218,7 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1B263B),
         foregroundColor: Colors.white,
-        title: const Text("Update Delivered Stocks"),
+        title: const Text("Update Return Stocks"),
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())

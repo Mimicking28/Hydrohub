@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hydrohub/Onsite_Worker/Stocks/update_refilled.dart';
 import '../../../widgets/custom_menu_button.dart';
 import '../../../Delivery/home_page.dart';
 import '../../Delivery/Stocks/update_delivery_stock.dart';
-
+import '../../Delivery/Stocks/update_return_stock.dart';
 
 
 class UpdateStock extends StatelessWidget {
@@ -116,7 +115,7 @@ class UpdateStock extends StatelessWidget {
 
                   // Buttons
                   CustomMenuButton(
-                    icon: Icons.update_disabled_rounded,
+                    icon: Icons.local_shipping,
                     label: "Update Delivery Stocks",
                     onPressed: () {
                       Navigator.push(
@@ -127,12 +126,12 @@ class UpdateStock extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   CustomMenuButton(
-                    icon: Icons.local_shipping,
-                    label: "Update Sales",
+                    icon: Icons.assignment_return,
+                    label: "Update return Stocks",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const UpdateRefilled()),
+                        MaterialPageRoute(builder: (context) => const UpdateReturnStock()),
                       );
                     },
                   ),
