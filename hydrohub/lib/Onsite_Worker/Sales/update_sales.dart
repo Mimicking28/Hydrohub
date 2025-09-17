@@ -20,8 +20,9 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
     fetchSales();
   }
 
+  // ✅ Fetch only onsite sales
   Future<void> fetchSales() async {
-    const String apiUrl = "http://10.0.2.2:5000/api/sales/onsite";
+    const String apiUrl = "http://10.0.2.2:5000/sales?type=onsite";
     final response = await http.get(Uri.parse(apiUrl));
 
     if (response.statusCode == 200) {
@@ -39,8 +40,9 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
     }
   }
 
+  // ✅ Update a sale by ID
   Future<void> updateSale(int id, Map<String, dynamic> updatedData) async {
-    final String apiUrl = "http://10.0.2.2:5000/api/sales/onsite/$id";
+    final String apiUrl = "http://10.0.2.2:5000/sales/$id";
 
     final response = await http.put(
       Uri.parse(apiUrl),
@@ -52,7 +54,7 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("✅ Sale updated successfully")),
       );
-      fetchSales();
+      fetchSales(); // refresh list
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Failed to update sale: ${response.body}")),
@@ -60,10 +62,13 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
     }
   }
 
+  // ✅ Dialog for updating a sale
   void showUpdateDialog(Map<String, dynamic> sale) {
-    String product = sale["product_id"].toString();
+    String waterType = sale["water_type"];
+    String size = sale["size"];
     int quantity = sale["quantity"];
-    double totalAmount = double.tryParse(sale["total_amount"].toString()) ?? 0.0;
+    double totalAmount = double.tryParse(sale["total"].toString()) ?? 0.0;
+    String paymentMethod = sale["payment_method"];
 
     showDialog(
       context: context,
@@ -77,13 +82,13 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Product
+                  // Water Type
                   TextField(
-                    controller: TextEditingController(text: product),
-                    onChanged: (value) => product = value,
+                    controller: TextEditingController(text: waterType),
+                    onChanged: (value) => waterType = value,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
-                      labelText: "Product",
+                      labelText: "Water Type",
                       labelStyle: TextStyle(color: Colors.white70),
                       enabledBorder: UnderlineInputBorder(
                         borderSide: BorderSide(color: Colors.white54),
@@ -95,7 +100,25 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
                   ),
                   const SizedBox(height: 10),
 
-                  // Quantity
+                  // Size
+                  TextField(
+                    controller: TextEditingController(text: size),
+                    onChanged: (value) => size = value,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: "Size",
+                      labelStyle: TextStyle(color: Colors.white70),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white54),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.blue),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Quantity with buttons
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -139,6 +162,24 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 10),
+
+                  // Payment Method
+                  TextField(
+                    controller: TextEditingController(text: paymentMethod),
+                    onChanged: (value) => paymentMethod = value,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: "Payment Method",
+                      labelStyle: TextStyle(color: Colors.white70),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white54),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.blue),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -150,9 +191,13 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
               TextButton(
                 onPressed: () {
                   final updatedData = {
-                    "product_id": product,
+                    "water_type": waterType,
+                    "size": size,
                     "quantity": quantity,
-                    "total_amount": totalAmount,
+                    "total": totalAmount,
+                    "date": sale["date"], // keep same date
+                    "payment_method": paymentMethod,
+                    "sale_type": "onsite", // ensure stays onsite
                   };
 
                   updateSale(sale["id"], updatedData);
@@ -167,6 +212,7 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
     );
   }
 
+  // ✅ Format date to PH time
   String formatToPHTime(String utcString) {
     try {
       final utcTime = DateTime.parse(utcString).toUtc();
@@ -200,16 +246,13 @@ class _UpdateOnsiteSalesState extends State<UpdateSales> {
                       color: const Color(0xFF1B263B),
                       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                       child: ListTile(
-                        title: Text(
-                          "Sale #${sale["id"]}",
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold),
-                        ),
                         subtitle: Text(
-                          "Product: ${sale["product_id"]}\n"
+                          "Water: ${sale["water_type"]}\n"
+                          "Size: ${sale["size"]}\n"
                           "Quantity: ${sale["quantity"]}\n"
-                          "Total: ₱${sale["total_amount"]}\n"
-                          "Date: ${formatToPHTime(sale["sale_date"])}",
+                          "Total: ₱${sale["total"]}\n"
+                          "Payment: ${sale["payment_method"]}\n"
+                          "Date: ${formatToPHTime(sale["date"])}",
                           style: const TextStyle(color: Colors.white70),
                         ),
                         trailing: ElevatedButton(

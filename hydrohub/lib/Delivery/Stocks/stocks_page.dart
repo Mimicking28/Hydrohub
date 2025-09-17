@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:hydrohub/Onsite_Worker/Stocks/update_discard.dart';
+import 'package:hydrohub/Delivery/Stocks/update_stock_page.dart';
 
 import '../../widgets/custom_menu_button.dart';
 import '../home_page.dart';
@@ -203,7 +203,7 @@ class _StocksPageState extends State<StocksDeliverPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (context) => const UpdateDiscard()),
+                            builder: (context) => const UpdateStock()),
                       ).then((_) => fetchStockData());
                     },
                   ),

@@ -264,7 +264,7 @@ class _AddSaleState extends State<AddSale> {
                 selectedWaterType == null || selectedSize == null || quantity == 0
                     ? "Total: ₱0.00"
                     : "$selectedWaterType - ₱${prices[selectedWaterType]?[selectedSize]?.toStringAsFixed(2)} "
-                      "x $quantity = ₱${totalPrice.toStringAsFixed(2)}",
+                        "x $quantity = ₱${totalPrice.toStringAsFixed(2)}",
                 style: const TextStyle(fontSize: 18, color: Colors.greenAccent),
               ),
               const SizedBox(height: 20),
@@ -297,8 +297,11 @@ class _AddSaleState extends State<AddSale> {
                   children: [
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                      icon: const Icon(Icons.camera_alt),
-                      label: const Text("Upload Payment Proof"),
+                      icon: const Icon(Icons.camera_alt, color: Colors.white),
+                      label: const Text(
+                        "Upload Payment Proof",
+                        style: TextStyle(color: Colors.white), // ✅ White text
+                      ),
                       onPressed: _pickImage,
                     ),
                     if (paymentProof != null) ...[
@@ -321,7 +324,7 @@ class _AddSaleState extends State<AddSale> {
                       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                     ),
                     onPressed: _confirmSale,
-                    child: const Text("Confirm"),
+                    child: const Text("Confirm", style: TextStyle(color: Colors.white)),
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
@@ -332,7 +335,7 @@ class _AddSaleState extends State<AddSale> {
                     onPressed: () {
                       Navigator.pop(context);
                     },
-                    child: const Text("Cancel"),
+                    child: const Text("Cancel", style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),
