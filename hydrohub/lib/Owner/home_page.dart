@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../widgets/custom_menu_button.dart';
-import '../../Delivery/Sales/sales_page.dart';
-import '../../Delivery/Order/orders_page.dart';
-import '../Stocks/stocks_page.dart';
+import 'package:hydrohub/Owner/Account/account_page.dart';
+import 'package:hydrohub/Owner/Logs/logs_page.dart';
+import 'package:hydrohub/Owner/Reports/report_page.dart';
+import 'package:hydrohub/Owner/Product/product_page.dart';
+import '../widgets/custom_menu_button.dart';
+
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -114,34 +116,45 @@ class HomePage extends StatelessWidget {
 
                   // Buttons
                   CustomMenuButton(
-                    icon: Icons.attach_money,
-                    label: "Sales",
+                    icon: Icons.person,
+                    label: "Accounts",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const SalesPage()),
+                        MaterialPageRoute(builder: (context) => const Accounts()),
                       );
                     },
                   ),
                   const SizedBox(height: 20),
                   CustomMenuButton(
-                    icon: Icons.local_shipping,
-                    label: "Orders",
+                    icon: Icons.local_mall,
+                    label: "Product",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const OrdersPage()),
+                        MaterialPageRoute(builder: (context) => const ProductPage()),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  CustomMenuButton(
+                    icon: Icons.history,
+                    label: "Logs",
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const LogsPage()),
                       );
                     },
                   ),
                   const SizedBox(height: 20),
                   CustomMenuButton(
                     icon: Icons.water_drop,
-                    label: "Stocks",
+                    label: "Reports",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const StocksDeliverPage()),
+                        MaterialPageRoute(builder: (context) => const ReportPage()),
                       );
                     },
                   ),
