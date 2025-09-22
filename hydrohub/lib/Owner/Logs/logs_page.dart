@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
-import '../../widgets/custom_menu_button.dart';
-import '../../Delivery/Sales/sales_page.dart';
-import '../../Delivery/Order/orders_page.dart';
-import '../Stocks/stocks_page.dart';
+import 'package:hydrohub/Owner/Logs/order_logs.dart';
+import 'package:hydrohub/Owner/Logs/sale_logs.dart';
+import 'package:hydrohub/Owner/Logs/stock_logs.dart';
+import '../../../widgets/custom_menu_button.dart';
+import '../home_page.dart';
 
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+
+
+class LogsPage extends StatelessWidget {
+  const LogsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -115,36 +118,49 @@ class HomePage extends StatelessWidget {
                   // Buttons
                   CustomMenuButton(
                     icon: Icons.attach_money,
-                    label: "Sales",
+                    label: "Sales Logs",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const SalesPage()),
+                        MaterialPageRoute(builder: (context) => const SalesLogs()),
                       );
                     },
                   ),
                   const SizedBox(height: 20),
                   CustomMenuButton(
                     icon: Icons.local_shipping,
-                    label: "Orders",
+                    label: "Order Logs",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const OrdersPage()),
+                        MaterialPageRoute(builder: (context) => const OrderLogs()),
                       );
                     },
                   ),
                   const SizedBox(height: 20),
                   CustomMenuButton(
-                    icon: Icons.water_drop,
-                    label: "Stocks",
+                    icon: Icons.history,  
+                    label: "Inventory Logs",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const StocksDeliverPage()),
+                        MaterialPageRoute(builder: (context) => const StockLogs()),
                       );
                     },
                   ),
+                  const SizedBox(height: 20),
+                  CustomMenuButton(
+                    icon: Icons.local_mall,
+                    label: "Product Logs",
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const OrderLogs()),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                 
                 ],
               ),
             ),
@@ -154,3 +170,4 @@ class HomePage extends StatelessWidget {
     );
   }
 }
+

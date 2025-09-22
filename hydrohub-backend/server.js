@@ -1,6 +1,6 @@
 const express = require("express");
-const bodyParser = require("body-parser");
 const cors = require("cors");
+const bodyParser = require("body-parser");
 const { Pool } = require("pg");
 const multer = require("multer");
 const path = require("path");
@@ -19,10 +19,10 @@ app.use("/uploads", express.static("uploads")); // serve proof images
 // PostgreSQL Connection
 // ========================
 const pool = new Pool({
-  user: "postgres",      // change if different
+  user: "postgres",
   host: "localhost",
-  database: "hydrohub",  // change if your DB name is different
-  password: "12345",     // change to your password
+  database: "hydrohub",
+  password: "12345",
   port: 5432,
 });
 
@@ -31,11 +31,11 @@ const pool = new Pool({
 // ========================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/"); // folder must exist
+    cb(null, "uploads/");
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + path.extname(file.originalname));
-  }
+  },
 });
 const upload = multer({ storage });
 
@@ -62,15 +62,15 @@ app.post("/stocks", async (req, res) => {
   }
 });
 
-// ✅ Fetch stocks (universal with filter)
+// ✅ Fetch stocks
 app.get("/stocks", async (req, res) => {
   try {
-    const { type } = req.query; // e.g. ?type=refilled,discarded
+    const { type } = req.query;
     let query = "SELECT * FROM stocks";
     let params = [];
 
     if (type) {
-      const types = type.split(","); // support multiple types
+      const types = type.split(",");
       query += " WHERE stock_type = ANY($1)";
       params.push(types);
     }
@@ -85,7 +85,7 @@ app.get("/stocks", async (req, res) => {
   }
 });
 
-// ✅ Update a stock entry
+// ✅ Update stock
 app.put("/stocks/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -93,8 +93,8 @@ app.put("/stocks/:id", async (req, res) => {
 
     const result = await pool.query(
       `UPDATE stocks
-       SET water_type = $1, size = $2, amount = $3, stock_type = $4, date = $5, reason = $6
-       WHERE id = $7
+       SET water_type=$1, size=$2, amount=$3, stock_type=$4, date=$5, reason=$6
+       WHERE id=$7
        RETURNING *`,
       [water_type, size, amount, stock_type, date, reason || null, id]
     );
@@ -110,7 +110,7 @@ app.put("/stocks/:id", async (req, res) => {
   }
 });
 
-// ✅ Get available stock for specific type & size
+// ✅ Get available stock
 app.post("/available_stock", async (req, res) => {
   try {
     const { water_type, size } = req.body;
@@ -133,7 +133,7 @@ app.post("/available_stock", async (req, res) => {
   }
 });
 
-// ✅ Stock summary (grouped by water_type)
+// ✅ Stock summary
 app.get("/stock_summary", async (req, res) => {
   try {
     const result = await pool.query(
@@ -146,7 +146,7 @@ app.get("/stock_summary", async (req, res) => {
     );
 
     const summary = { Alkaline: 0, Mineral: 0, Purified: 0 };
-    result.rows.forEach(row => {
+    result.rows.forEach((row) => {
       const key = row.water_type.charAt(0).toUpperCase() + row.water_type.slice(1);
       summary[key] = parseInt(row.available);
     });
@@ -162,7 +162,7 @@ app.get("/stock_summary", async (req, res) => {
 // SALES ROUTES
 // ========================
 
-// ✅ Add Sale (auto deduct stock as delivered if delivery)
+// ✅ Add Sale
 app.post("/sales", upload.single("proof"), async (req, res) => {
   try {
     const {
@@ -170,42 +170,36 @@ app.post("/sales", upload.single("proof"), async (req, res) => {
       size,
       quantity,
       total,
-      date,
       payment_method,
-      sale_type
+      sale_type,
     } = req.body;
 
-    const proofPath = req.file ? req.file.filename : null;
+    const proof = req.file ? req.file.filename : null;
+    const date = new Date();
 
-    // Insert sale
     const result = await pool.query(
       `INSERT INTO sales
         (water_type, size, quantity, total, date, payment_method, sale_type, proof)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING *`,
-      [water_type, size, quantity, total, date, payment_method, sale_type, proofPath]
+      [water_type, size, quantity, total, date, payment_method, sale_type, proof]
     );
 
-    // Auto deduct stock if delivery
-    if (sale_type === "delivery") {
-      await pool.query(
-        `INSERT INTO stocks (water_type, size, amount, stock_type, date)
-         VALUES ($1,$2,$3,'delivered',$4)`,
-        [water_type, size, quantity, date]
-      );
-    }
-
-    res.status(201).json(result.rows[0]);
+    const sale = result.rows[0];
+    res.status(201).json({
+      ...sale,
+      proof_url: proof ? `http://localhost:5000/uploads/${proof}` : null,
+    });
   } catch (err) {
-    console.error("Error inserting sale:", err.message);
+    console.error("Error adding sale:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ✅ Get all sales (with optional filter)
+// ✅ Fetch Sales
 app.get("/sales", async (req, res) => {
   try {
-    const { type } = req.query; // e.g. ?type=onsite or ?type=delivery
+    const { type } = req.query;
     let query = "SELECT * FROM sales";
     let params = [];
 
@@ -215,16 +209,21 @@ app.get("/sales", async (req, res) => {
     }
 
     query += " ORDER BY date DESC";
-
     const result = await pool.query(query, params);
-    res.json(result.rows);
+
+    const sales = result.rows.map((sale) => ({
+      ...sale,
+      proof_url: sale.proof ? `http://localhost:5000/uploads/${sale.proof}` : null,
+    }));
+
+    res.json(sales);
   } catch (err) {
     console.error("Error fetching sales:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ✅ Update Sale (universal for onsite & delivery)
+// ✅ Update Sale
 app.put("/sales/:id", upload.single("proof"), async (req, res) => {
   try {
     const { id } = req.params;
@@ -235,75 +234,49 @@ app.put("/sales/:id", upload.single("proof"), async (req, res) => {
       total,
       date,
       payment_method,
-      sale_type
+      sale_type,
     } = req.body;
 
     const proofPath = req.file ? req.file.filename : null;
 
-    // Get the original sale record
-    const existingSale = await pool.query(
-      "SELECT * FROM sales WHERE id = $1",
-      [id]
-    );
-
+    const existingSale = await pool.query("SELECT * FROM sales WHERE id = $1", [id]);
     if (existingSale.rows.length === 0) {
       return res.status(404).json({ error: "Sale not found" });
     }
 
-    const oldSale = existingSale.rows[0];
-
-    // =====================
-    // STOCK ADJUSTMENTS
-    // =====================
-    if (oldSale.sale_type === "delivery") {
-      // Revert old deduction
-      await pool.query(
-        `INSERT INTO stocks (water_type, size, amount, stock_type, date)
-         VALUES ($1,$2,$3,'returned',$4)`,
-        [oldSale.water_type, oldSale.size, oldSale.quantity, date]
-      );
-    }
-
-    if (sale_type === "delivery") {
-      // Deduct new quantity
-      await pool.query(
-        `INSERT INTO stocks (water_type, size, amount, stock_type, date)
-         VALUES ($1,$2,$3,'delivered',$4)`,
-        [water_type, size, quantity, date]
-      );
-    }
-
-    // =====================
-    // UPDATE SALE RECORD
-    // =====================
     const result = await pool.query(
       `UPDATE sales
-       SET water_type = $1,
-           size = $2,
-           quantity = $3,
-           total = $4,
-           date = $5,
-           payment_method = $6,
-           sale_type = $7,
-           proof = COALESCE($8, proof)
-       WHERE id = $9
+       SET water_type=$1, size=$2, quantity=$3, total=$4, date=$5,
+           payment_method=$6, sale_type=$7, proof=COALESCE($8, proof)
+       WHERE id=$9
        RETURNING *`,
-      [
-        water_type,
-        size,
-        quantity,
-        total,
-        date,
-        payment_method,
-        sale_type,
-        proofPath,
-        id
-      ]
+      [water_type, size, quantity, total, date, payment_method, sale_type, proofPath, id]
     );
 
-    res.json(result.rows[0]);
+    const sale = result.rows[0];
+    res.json({
+      ...sale,
+      proof_url: sale.proof ? `http://localhost:5000/uploads/${sale.proof}` : null,
+    });
   } catch (err) {
     console.error("Error updating sale:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ✅ Logs (alias for sales with proof_url)
+app.get("/logs", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM sales ORDER BY date DESC");
+
+    const logs = result.rows.map((sale) => ({
+      ...sale,
+      proof_url: sale.proof ? `http://localhost:5000/uploads/${sale.proof}` : null,
+    }));
+
+    res.json(logs);
+  } catch (err) {
+    console.error("Error fetching logs:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -312,5 +285,5 @@ app.put("/sales/:id", upload.single("proof"), async (req, res) => {
 // START SERVER
 // ========================
 app.listen(port, () => {
-  console.log(`🚀 Server running on http://localhost:${port}`);
+  console.log(`🚀 Server running at http://localhost:${port}`);
 });
