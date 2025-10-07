@@ -25,7 +25,7 @@ class _UpdateStockState extends State<UpdateReturnStock> {
   }
 
   Future<void> fetchStocks() async {
-    const String apiUrl = "http://10.0.2.2:5000/stocks";
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks";
     final response = await http.get(Uri.parse(apiUrl));
 
     if (response.statusCode == 200) {
@@ -47,7 +47,7 @@ class _UpdateStockState extends State<UpdateReturnStock> {
   }
 
   Future<void> updateStock(int id, Map<String, dynamic> updatedData) async {
-    final String apiUrl = "http://10.0.2.2:5000/stocks/$id";
+    final String apiUrl = "http://10.0.2.2:3000/api/stocks/$id";
 
     final response = await http.put(
       Uri.parse(apiUrl),
@@ -67,10 +67,29 @@ class _UpdateStockState extends State<UpdateReturnStock> {
     }
   }
 
+  void showAlert(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1B263B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: const Text("⚠️ Warning", style: TextStyle(color: Colors.orange)),
+        content: Text(message, style: const TextStyle(color: Colors.white)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK", style: TextStyle(color: Colors.blue)),
+          )
+        ],
+      ),
+    );
+  }
+
   void showUpdateDialog(Map<String, dynamic> stock) {
     String selectedType = stock["water_type"];
     String selectedSize = stock["size"];
     int amount = stock["amount"];
+    int availableStock = stock["amount"]; // Original available
     String? selectedReason = stock["reason"];
 
     showDialog(
@@ -124,7 +143,7 @@ class _UpdateStockState extends State<UpdateReturnStock> {
                 ),
                 const SizedBox(height: 10),
 
-                // Amount
+                // Amount controls
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -149,7 +168,7 @@ class _UpdateStockState extends State<UpdateReturnStock> {
                 ),
                 const SizedBox(height: 10),
 
-                // Reason (only for returned logs)
+                // Reason
                 DropdownButton<String>(
                   value: selectedReason,
                   hint: const Text("Reason", style: TextStyle(color: Colors.white)),
@@ -177,6 +196,17 @@ class _UpdateStockState extends State<UpdateReturnStock> {
               ),
               TextButton(
                 onPressed: () {
+                  // ✅ Validation before updating
+                  if (amount < 0) {
+                    showAlert("Amount cannot be less than 0.");
+                    return;
+                  }
+
+                  if (amount > availableStock) {
+                    showAlert("Amount exceeds available stock ($availableStock).");
+                    return;
+                  }
+
                   final nowUtc = DateTime.now().toUtc();
                   final isoUtc = nowUtc.toIso8601String();
 
@@ -186,7 +216,7 @@ class _UpdateStockState extends State<UpdateReturnStock> {
                     "amount": amount,
                     "stock_type": stock["stock_type"],
                     "reason": selectedReason,
-                    "date": isoUtc, // ✅ update with fresh UTC timestamp
+                    "date": isoUtc,
                   };
 
                   updateStock(stock["id"], updatedData);
@@ -237,7 +267,7 @@ class _UpdateStockState extends State<UpdateReturnStock> {
                     subtitle: Text(
                       "Amount: ${stock["amount"]} | Type: ${stock["stock_type"]}"
                       "${stock["reason"] != null ? " | Reason: ${stock["reason"]}" : ""}\n"
-                      "Date: ${formatToPHTime(stock["date"])}", // ✅ PH time here
+                      "Date: ${formatToPHTime(stock["date"])}",
                       style: const TextStyle(color: Colors.white70),
                     ),
                     trailing: ElevatedButton(

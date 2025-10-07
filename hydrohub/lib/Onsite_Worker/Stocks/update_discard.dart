@@ -24,7 +24,7 @@ class _UpdateStockState extends State<UpdateDiscard> {
   }
 
   Future<void> fetchStocks() async {
-    const String apiUrl = "http://10.0.2.2:5000/stocks";
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks";
     final response = await http.get(Uri.parse(apiUrl));
 
     if (response.statusCode == 200) {
@@ -46,7 +46,7 @@ class _UpdateStockState extends State<UpdateDiscard> {
   }
 
   Future<void> updateStock(int id, Map<String, dynamic> updatedData) async {
-    final String apiUrl = "http://10.0.2.2:5000/stocks/$id";
+    final String apiUrl = "http://10.0.2.2:3000/api/stocks/$id";
 
     final response = await http.put(
       Uri.parse(apiUrl),

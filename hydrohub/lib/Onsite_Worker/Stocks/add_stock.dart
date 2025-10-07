@@ -25,7 +25,7 @@ class _AddStockState extends State<AddStock> {
     required int amount,
     required String date,
   }) async {
-    const String apiUrl = "http://10.0.2.2:5000/stocks";
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks";
 
     final response = await http.post(
       Uri.parse(apiUrl),
