@@ -22,7 +22,7 @@ class _StockLogsState extends State<StockLogs> {
 
   // ✅ Fetch all sales (delivery + onsite)
   Future<void> fetchSales() async {
-    const String apiUrl = "http://10.0.2.2:5000/sales";
+    const String apiUrl = "http://10.0.2.2:3000/api/sales";
     final response = await http.get(Uri.parse(apiUrl));
 
     if (response.statusCode == 200) {

@@ -22,7 +22,7 @@ class _DeliveryStockState extends State<DeliveryStock> {
 
   // ✅ Fetch available stock from backend
   Future<int> fetchAvailableStock(String waterType, String size) async {
-    const String apiUrl = "http://10.0.2.2:5000/available_stock";
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks/available";
 
     final response = await http.post(
       Uri.parse(apiUrl),
@@ -50,7 +50,7 @@ class _DeliveryStockState extends State<DeliveryStock> {
     required int amount,
     required String date,
   }) async {
-    const String apiUrl = "http://10.0.2.2:5000/stocks";
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks";
 
     final response = await http.post(
       Uri.parse(apiUrl),
@@ -71,7 +71,7 @@ class _DeliveryStockState extends State<DeliveryStock> {
     }
   }
 
-  // ✅ Confirm delivery
+  // ✅ Confirm delivery (with validation for below-zero stock)
   void _confirmDelivery() async {
     if (selectedWaterType == null || selectedSize == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -91,8 +91,9 @@ class _DeliveryStockState extends State<DeliveryStock> {
       // ✅ Check available stock first
       final available = await fetchAvailableStock(type, size);
 
-      if (qty > available) {
-        // ❌ Show popup if trying to deliver more than available
+      // ✅ Validation: prevent going below zero
+      if (available - qty < 0) {
+        // ❌ Show popup if the result will be below zero
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
@@ -101,11 +102,11 @@ class _DeliveryStockState extends State<DeliveryStock> {
               borderRadius: BorderRadius.circular(20),
             ),
             title: const Text(
-              "⚠️ Not Enough Stock",
+              "⚠️ Exceeds Available Stock",
               style: TextStyle(color: Colors.white),
             ),
             content: Text(
-              "You only have $available available for $type ($size).",
+              "You only have $available available for $type ($size). Delivering $qty will result in negative stock.",
               style: const TextStyle(color: Colors.white),
             ),
             actions: [
@@ -116,7 +117,7 @@ class _DeliveryStockState extends State<DeliveryStock> {
             ],
           ),
         );
-        return;
+        return; // stop execution
       }
 
       // ✅ Save if within limit
@@ -390,7 +391,7 @@ class _DeliveryStockState extends State<DeliveryStock> {
                                   ),
                                 ),
                                 onPressed: _confirmDelivery,
-                                child: const Text("Deliver"),
+                                child: const Text("Confirm"),
                               ),
                               ElevatedButton(
                                 style: ElevatedButton.styleFrom(

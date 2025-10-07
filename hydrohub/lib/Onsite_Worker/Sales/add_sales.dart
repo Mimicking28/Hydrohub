@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'dart:io'; // For File
-import 'package:image_picker/image_picker.dart'; // 📸 Camera package
+//import 'dart:convert';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 import '../home_page.dart';
 
@@ -19,7 +19,7 @@ class _AddSaleState extends State<AddSale> {
   String? selectedSize;
   String? selectedPayment;
   int quantity = 0;
-  File? paymentProof; // 📸 Captured image file
+  File? paymentProof;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -49,7 +49,7 @@ class _AddSaleState extends State<AddSale> {
     required String paymentMethod,
     File? proofImage,
   }) async {
-    const String apiUrl = "http://10.0.2.2:5000/sales";
+    const String apiUrl = "http://10.0.2.2:3000/api/sales";
 
     var request = http.MultipartRequest("POST", Uri.parse(apiUrl));
     request.fields["water_type"] = waterType;
@@ -58,8 +58,6 @@ class _AddSaleState extends State<AddSale> {
     request.fields["total"] = total.toStringAsFixed(2);
     request.fields["date"] = date;
     request.fields["payment_method"] = paymentMethod;
-
-    // ✅ Always set sale_type as onsite
     request.fields["sale_type"] = "onsite";
 
     if (proofImage != null) {
@@ -93,17 +91,24 @@ class _AddSaleState extends State<AddSale> {
     final formattedDate = DateFormat('yyyy-MM-dd HH:mm:ss').format(now);
     final double total = totalPrice;
 
+    // ✅ Capture values in local variables so they don't reset before dialog shows
+    final String waterType = selectedWaterType!;
+    final String size = selectedSize!;
+    final int qty = quantity;
+    final String payment = selectedPayment!;
+    final File? proof = paymentProof;
+
     await saveSaleToDatabase(
-      waterType: selectedWaterType!,
-      size: selectedSize!,
-      quantity: quantity,
+      waterType: waterType,
+      size: size,
+      quantity: qty,
       total: total,
       date: formattedDate,
-      paymentMethod: selectedPayment!,
-      proofImage: paymentProof,
+      paymentMethod: payment,
+      proofImage: proof,
     );
 
-    // ✅ Confirmation Popup
+    // ✅ Show confirmation popup with saved local values
     showDialog(
       context: context,
       builder: (context) {
@@ -115,13 +120,13 @@ class _AddSaleState extends State<AddSale> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Type: $selectedWaterType", style: const TextStyle(color: Colors.white)),
-              Text("Size: $selectedSize", style: const TextStyle(color: Colors.white)),
-              Text("Quantity: $quantity", style: const TextStyle(color: Colors.white)),
+              Text("Type: $waterType", style: const TextStyle(color: Colors.white)),
+              Text("Size: $size", style: const TextStyle(color: Colors.white)),
+              Text("Quantity: $qty", style: const TextStyle(color: Colors.white)),
               Text("Total: ₱${total.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white)),
-              Text("Payment: $selectedPayment", style: const TextStyle(color: Colors.white)),
+              Text("Payment: $payment", style: const TextStyle(color: Colors.white)),
               const Text("Sale Type: Onsite", style: TextStyle(color: Colors.lightBlueAccent)),
-              if (selectedPayment == "E-wallet" && paymentProof != null)
+              if (payment == "E-wallet" && proof != null)
                 const Text("Proof: 📸 Uploaded", style: TextStyle(color: Colors.greenAccent)),
               Text("Date: $formattedDate", style: const TextStyle(color: Colors.white)),
             ],
@@ -139,6 +144,7 @@ class _AddSaleState extends State<AddSale> {
       },
     );
 
+    // ✅ Reset form AFTER dialog appears
     setState(() {
       selectedWaterType = null;
       selectedSize = null;
@@ -298,10 +304,7 @@ class _AddSaleState extends State<AddSale> {
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
                       icon: const Icon(Icons.camera_alt, color: Colors.white),
-                      label: const Text(
-                        "Upload Payment Proof",
-                        style: TextStyle(color: Colors.white), // ✅ White text
-                      ),
+                      label: const Text("Upload Payment Proof", style: TextStyle(color: Colors.white)),
                       onPressed: _pickImage,
                     ),
                     if (paymentProof != null) ...[

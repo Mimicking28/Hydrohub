@@ -30,7 +30,7 @@ class _DiscardStockState extends State<DiscardStock> {
 
   // ✅ Fetch available stock from backend
   Future<int> fetchAvailableStock(String waterType, String size) async {
-    const String apiUrl = "http://10.0.2.2:5000/available_stock";
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks/available";
 
     final response = await http.post(
       Uri.parse(apiUrl),
@@ -59,7 +59,7 @@ class _DiscardStockState extends State<DiscardStock> {
     required String date,
     required String reason,
   }) async {
-    const String apiUrl = "http://10.0.2.2:5000/stocks";
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks";
 
     final response = await http.post(
       Uri.parse(apiUrl),

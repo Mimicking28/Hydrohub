@@ -7,16 +7,15 @@ class UpdateDeliveryStock extends StatefulWidget {
   const UpdateDeliveryStock({super.key});
 
   @override
-  State<UpdateDeliveryStock> createState() => _UpdateStockState();
+  State<UpdateDeliveryStock> createState() => _UpdateDeliveryStockState();
 }
 
-class _UpdateStockState extends State<UpdateDeliveryStock> {
+class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
   List<dynamic> stocks = [];
   bool isLoading = true;
 
   final List<String> waterTypes = ["Purified", "Mineral", "Alkaline"];
   final List<String> sizes = ["5L", "10L", "30L"];
-  final List<String> reasons = ["Damaged", "Expired", "Customer Return", "Other"];
 
   @override
   void initState() {
@@ -24,54 +23,65 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
     fetchStocks();
   }
 
+  // ✅ Fetch only delivered stocks
   Future<void> fetchStocks() async {
-    const String apiUrl = "http://10.0.2.2:5000/stocks";
-    final response = await http.get(Uri.parse(apiUrl));
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks";
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
 
-    if (response.statusCode == 200) {
-      final allStocks = json.decode(response.body);
+      if (response.statusCode == 200) {
+        final allStocks = json.decode(response.body);
 
-      setState(() {
-        // ✅ filter only delivered stocks
-        stocks = allStocks.where((stock) => stock["stock_type"] == "delivered").toList();
-        isLoading = false;
-      });
-    } else {
-      setState(() {
-        isLoading = false;
-      });
+        setState(() {
+          stocks = allStocks
+              .where((stock) =>
+                  stock["stock_type"] != null &&
+                  stock["stock_type"].toString().toLowerCase() == "delivered")
+              .toList();
+          isLoading = false;
+        });
+      } else {
+        throw Exception("Server responded ${response.statusCode}");
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("❌ Failed to fetch stocks")),
+        SnackBar(content: Text("❌ Failed to fetch stocks: $e")),
       );
     }
   }
 
+  // ✅ Update stock entry
   Future<void> updateStock(int id, Map<String, dynamic> updatedData) async {
-    final String apiUrl = "http://10.0.2.2:5000/stocks/$id";
+    final String apiUrl = "http://10.0.2.2:3000/api/stocks/$id";
 
-    final response = await http.put(
-      Uri.parse(apiUrl),
-      headers: {"Content-Type": "application/json"},
-      body: json.encode(updatedData),
-    );
-
-    if (response.statusCode == 200) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Stock updated successfully")),
+    try {
+      final response = await http.put(
+        Uri.parse(apiUrl),
+        headers: {"Content-Type": "application/json"},
+        body: json.encode(updatedData),
       );
-      fetchStocks();
-    } else {
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Stock updated successfully")),
+        );
+        fetchStocks();
+      } else {
+        throw Exception(response.body);
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Failed to update stock: ${response.body}")),
+        SnackBar(content: Text("❌ Failed to update stock: $e")),
       );
     }
   }
 
+  // ✅ Update dialog with validation
   void showUpdateDialog(Map<String, dynamic> stock) {
-    String selectedType = stock["water_type"];
-    String selectedSize = stock["size"];
-    int amount = stock["amount"];
-    String? selectedReason = stock["reason"];
+    String selectedType = stock["water_type"] ?? "Purified";
+    String selectedSize = stock["size"] ?? "5L";
+    int amount = (stock["amount"] ?? 0).toInt();
 
     showDialog(
       context: context,
@@ -79,12 +89,14 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
         return StatefulBuilder(builder: (context, setStateDialog) {
           return AlertDialog(
             backgroundColor: const Color(0xFF1B263B),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text("✏️ Update Stock", style: TextStyle(color: Colors.white)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text("✏️ Update Stock",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Water Type
+                // ✅ Water Type Dropdown
                 DropdownButton<String>(
                   value: selectedType,
                   dropdownColor: const Color(0xFF1B263B),
@@ -93,7 +105,8 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
                   items: waterTypes.map((type) {
                     return DropdownMenuItem(
                       value: type,
-                      child: Text(type, style: const TextStyle(color: Colors.white)),
+                      child: Text(type,
+                          style: const TextStyle(color: Colors.white)),
                     );
                   }).toList(),
                   onChanged: (value) {
@@ -104,7 +117,7 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
                 ),
                 const SizedBox(height: 10),
 
-                // Size
+                // ✅ Size Dropdown
                 DropdownButton<String>(
                   value: selectedSize,
                   dropdownColor: const Color(0xFF1B263B),
@@ -113,7 +126,8 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
                   items: sizes.map((size) {
                     return DropdownMenuItem(
                       value: size,
-                      child: Text(size, style: const TextStyle(color: Colors.white)),
+                      child: Text(size,
+                          style: const TextStyle(color: Colors.white)),
                     );
                   }).toList(),
                   onChanged: (value) {
@@ -124,7 +138,7 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
                 ),
                 const SizedBox(height: 10),
 
-                // Amount
+                // ✅ Amount Counter
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -136,7 +150,9 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
                       },
                       icon: const Icon(Icons.remove, color: Colors.white),
                     ),
-                    Text("$amount", style: const TextStyle(color: Colors.white)),
+                    Text("$amount",
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 16)),
                     IconButton(
                       onPressed: () {
                         setStateDialog(() {
@@ -147,52 +163,30 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-
-                // Reason (only for delivered logs)
-                DropdownButton<String>(
-                  value: selectedReason,
-                  hint: const Text("Reason", style: TextStyle(color: Colors.white)),
-                  dropdownColor: const Color(0xFF1B263B),
-                  iconEnabledColor: Colors.white,
-                  isExpanded: true,
-                  items: reasons.map((reason) {
-                    return DropdownMenuItem(
-                      value: reason,
-                      child: Text(reason, style: const TextStyle(color: Colors.white)),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setStateDialog(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("Cancel", style: TextStyle(color: Colors.red)),
+                child:
+                    const Text("Cancel", style: TextStyle(color: Colors.redAccent)),
               ),
               TextButton(
                 onPressed: () {
                   final nowUtc = DateTime.now().toUtc();
-                  final isoUtc = nowUtc.toIso8601String();
-
                   final updatedData = {
                     "water_type": selectedType,
                     "size": selectedSize,
                     "amount": amount,
                     "stock_type": stock["stock_type"],
-                    "reason": selectedReason,
-                    "date": isoUtc, // ✅ update with fresh UTC timestamp
+                    "date": nowUtc.toIso8601String(),
                   };
 
                   updateStock(stock["id"], updatedData);
                   Navigator.pop(context);
                 },
-                child: const Text("Update", style: TextStyle(color: Colors.blue)),
+                child:
+                    const Text("Update", style: TextStyle(color: Colors.blueAccent)),
               ),
             ],
           );
@@ -201,6 +195,7 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
     );
   }
 
+  // ✅ Convert UTC to PH Time
   String formatToPHTime(String utcString) {
     try {
       final utcTime = DateTime.parse(utcString).toUtc();
@@ -222,37 +217,43 @@ class _UpdateStockState extends State<UpdateDeliveryStock> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              itemCount: stocks.length,
-              itemBuilder: (context, index) {
-                final stock = stocks[index];
-                return Card(
-                  color: const Color(0xFF1B263B),
-                  margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  child: ListTile(
-                    title: Text(
-                      "${stock["water_type"]} - ${stock["size"]}",
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      "Amount: ${stock["amount"]} | Type: ${stock["stock_type"]}"
-                      "${stock["reason"] != null ? " | Reason: ${stock["reason"]}" : ""}\n"
-                      "Date: ${formatToPHTime(stock["date"])}", // ✅ PH time here
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                    trailing: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          : stocks.isEmpty
+              ? const Center(
+                  child: Text("No delivered stocks found.",
+                      style: TextStyle(color: Colors.white70)))
+              : ListView.builder(
+                  itemCount: stocks.length,
+                  itemBuilder: (context, index) {
+                    final stock = stocks[index];
+                    return Card(
+                      color: const Color(0xFF1B263B),
+                      margin: const EdgeInsets.symmetric(
+                          vertical: 8, horizontal: 12),
+                      child: ListTile(
+                        title: Text(
+                          "${stock["water_type"] ?? "Unknown"} - ${stock["size"] ?? ""}",
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          "Amount: ${stock["amount"] ?? 0} | Type: ${stock["stock_type"] ?? ""}\n"
+                          "Date: ${formatToPHTime(stock["date"] ?? "")}",
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        trailing: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blueAccent,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => showUpdateDialog(stock),
+                          child: const Text("Update"),
+                        ),
                       ),
-                      onPressed: () => showUpdateDialog(stock),
-                      child: const Text("Update"),
-                    ),
-                  ),
-                );
-              },
-            ),
+                    );
+                  },
+                ),
     );
   }
 }

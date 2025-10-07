@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
+//import 'dart:convert';
 import 'dart:io'; // For File
 import 'package:image_picker/image_picker.dart'; // 📸 Camera package
 
@@ -49,7 +49,7 @@ class _AddSaleState extends State<AddSale> {
     required String paymentMethod,
     File? proofImage,
   }) async {
-    const String apiUrl = "http://10.0.2.2:5000/sales";
+    const String apiUrl = "http://10.0.2.2:3000/api/sales";
 
     var request = http.MultipartRequest("POST", Uri.parse(apiUrl));
     request.fields["water_type"] = waterType;
@@ -101,8 +101,8 @@ class _AddSaleState extends State<AddSale> {
       proofImage: paymentProof,
     );
 
-    // ✅ Confirmation Popup
-    showDialog(
+    // ✅ Confirmation Popup (no nulls)
+    await showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -127,8 +127,8 @@ class _AddSaleState extends State<AddSale> {
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context);
+                Navigator.pop(context); // Close dialog
+                Navigator.pop(context); // Go back to home
               },
               child: const Text("OK", style: TextStyle(color: Colors.blue)),
             ),
@@ -137,6 +137,7 @@ class _AddSaleState extends State<AddSale> {
       },
     );
 
+    // ✅ Clear form only after popup closes
     setState(() {
       selectedWaterType = null;
       selectedSize = null;

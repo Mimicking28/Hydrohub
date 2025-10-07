@@ -22,7 +22,7 @@ class _UpdateDeliverySalesState extends State<UpdateSales> {
 
   // ✅ Fetch only delivery sales
   Future<void> fetchSales() async {
-    const String apiUrl = "http://10.0.2.2:5000/sales?type=delivery";
+    const String apiUrl = "http://10.0.2.2:3000/api/sales?type=delivery";
     final response = await http.get(Uri.parse(apiUrl));
 
     if (response.statusCode == 200) {
@@ -42,7 +42,7 @@ class _UpdateDeliverySalesState extends State<UpdateSales> {
 
   // ✅ Update a sale by ID
   Future<void> updateSale(int id, Map<String, dynamic> updatedData) async {
-    final String apiUrl = "http://10.0.2.2:5000/sales/$id";
+    final String apiUrl = "http://10.0.2.2:3000/api/sales/$id";
 
     final response = await http.put(
       Uri.parse(apiUrl),

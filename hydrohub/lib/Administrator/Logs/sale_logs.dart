@@ -22,7 +22,7 @@ class _SalesLogsState extends State<SalesLogs> {
 
   // ✅ Fetch all sales (delivery + onsite)
   Future<void> fetchSales() async {
-    const String apiUrl = "http://10.0.2.2:5000/sales";
+    const String apiUrl = "http://10.0.2.2:3000/api/sales";
     final response = await http.get(Uri.parse(apiUrl));
 
     if (response.statusCode == 200) {
@@ -122,7 +122,7 @@ class _SalesLogsState extends State<SalesLogs> {
                     // ✅ Build full URL for proof image
                     final proofUrl = sale["proof"] != null &&
                             sale["proof"].toString().isNotEmpty
-                        ? "http://10.0.2.2:5000/uploads/${sale["proof"]}"
+                        ? "http://10.0.2.2:3000/uploads/${sale["proof"]}"
                         : null;
 
                     return Card(

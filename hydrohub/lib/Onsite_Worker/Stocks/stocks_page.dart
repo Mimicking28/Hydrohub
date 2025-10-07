@@ -30,7 +30,7 @@ class _StocksPageState extends State<StocksPage> {
   Future<void> fetchStockData() async {
     try {
       final response =
-          await http.get(Uri.parse("http://10.0.2.2:5000/stock_summary"));
+         await http.get(Uri.parse("http://10.0.2.2:3000/api/stocks/stock_summary"));
       // ⚠️ Use 10.0.2.2 for Android emulator. Replace with PC IP if using real device.
 
       if (response.statusCode == 200) {
@@ -170,7 +170,7 @@ class _StocksPageState extends State<StocksPage> {
                   ),
 
                   const SizedBox(height: 40),
-
+ 
                   // ✅ Dynamic Stock Display
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
