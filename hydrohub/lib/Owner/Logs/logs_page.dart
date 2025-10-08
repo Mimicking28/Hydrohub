@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hydrohub/Owner/Logs/order_logs.dart';
+import 'package:hydrohub/Owner/Logs/product_logs.dart';
 import 'package:hydrohub/Owner/Logs/sale_logs.dart';
 import 'package:hydrohub/Owner/Logs/stock_logs.dart';
 import '../../../widgets/custom_menu_button.dart';
@@ -155,7 +156,7 @@ class LogsPage extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const OrderLogs()),
+                        MaterialPageRoute(builder: (context) => const ProductLogs()),
                       );
                     },
                   ),
