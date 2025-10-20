@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:hydrohub/Administrator/Account/account_page.dart';
 import 'package:hydrohub/Administrator/Logs/logs_page.dart';
 import 'package:hydrohub/Administrator/Reports/report_page.dart';
+import 'package:hydrohub/Administrator/profile.dart'; // ✅ Import your profile page
+import '../../Sessions/admin_session.dart'; // ✅ For session data
 import '../widgets/custom_menu_button.dart';
-
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -11,7 +12,7 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF021526), // Dark background
+      backgroundColor: const Color(0xFF021526),
       body: Stack(
         children: [
           // 🔵 Top-right oval
@@ -67,7 +68,23 @@ class HomePage extends StatelessWidget {
                     alignment: Alignment.topRight,
                     child: IconButton(
                       onPressed: () {
-                        // TODO: Add profile page navigation
+                        // ✅ Navigate to Administrator Profile Page
+                        if (AdminSession.adminId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AdminProfilePage(
+                                adminId: AdminSession.adminId!,
+                              ),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("⚠️ Admin session not found"),
+                            ),
+                          );
+                        }
                       },
                       icon: const Icon(
                         Icons.account_circle,
@@ -120,7 +137,7 @@ class HomePage extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const Accounts()),
+                        MaterialPageRoute(builder: (context) => const AccountPage()),
                       );
                     },
                   ),

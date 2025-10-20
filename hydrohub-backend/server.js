@@ -21,7 +21,8 @@ app.get("/", (req, res) => {
 app.use("/api/products", require("./routes/products"));
 app.use("/api/sales", require("./routes/sales"));
 app.use("/api/stocks", require("./routes/stocks"));
-
+app.use("/api/accounts", require("./routes/accounts"));
+app.use("/api/login", require("./routes/login"));
 // Error handler
 app.use((err, req, res, next) => {
   console.error("❌ Server error:", err.stack);

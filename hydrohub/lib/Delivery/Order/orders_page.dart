@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:hydrohub/Onsite_Worker/Order/pending_orders.dart';
-import 'package:hydrohub/Onsite_Worker/Order/to_deliver.dart';
+import 'package:hydrohub/Delivery/Order/pending_orders.dart';
+import 'package:hydrohub/delivery/Order/to_deliver.dart';
 import '../../widgets/custom_menu_button.dart';
 import '../home_page.dart';
 
 class OrdersPage extends StatelessWidget {
-  const OrdersPage({super.key});
+  final int stationId;
+  final int staffId;
+
+  const OrdersPage({
+    super.key,
+    required this.stationId,
+    required this.staffId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +73,7 @@ class OrdersPage extends StatelessWidget {
                     alignment: Alignment.topRight,
                     child: IconButton(
                       onPressed: () {
-                        // TODO: Add profile page navigation
+                        // TODO: Navigate to Delivery staff profile
                       },
                       icon: const Icon(
                         Icons.account_circle,
@@ -84,7 +91,10 @@ class OrdersPage extends StatelessWidget {
                       onTap: () {
                         Navigator.pushReplacement(
                           context,
-                          MaterialPageRoute(builder: (context) => const HomePage()),
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                HomePage(stationId: stationId, staffId: staffId),
+                          ),
                         );
                       },
                       child: Text.rich(
@@ -119,7 +129,10 @@ class OrdersPage extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const PendingOrders()),
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              PendingOrders(stationId: stationId, staffId: staffId),
+                        ),
                       );
                     },
                   ),
@@ -130,11 +143,13 @@ class OrdersPage extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const ToDeliver()),
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              ToDeliver(stationId: stationId, staffId: staffId),
+                        ),
                       );
                     },
                   ),
-                  const SizedBox(height: 20),
                 ],
               ),
             ),
@@ -144,4 +159,3 @@ class OrdersPage extends StatelessWidget {
     );
   }
 }
-

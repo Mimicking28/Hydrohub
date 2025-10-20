@@ -4,7 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 
 class AddProduct extends StatefulWidget {
-  const AddProduct({super.key});
+  final int stationId;
+  const AddProduct({super.key, required this.stationId});
 
   @override
   State<AddProduct> createState() => _AddProductState();
@@ -12,7 +13,6 @@ class AddProduct extends StatefulWidget {
 
 class _AddProductState extends State<AddProduct> {
   final TextEditingController _priceController = TextEditingController();
-
   String? selectedProduct;
   String? selectedService;
   String? selectedSize;
@@ -29,76 +29,71 @@ class _AddProductState extends State<AddProduct> {
     }
   }
 
-  // 🔹 Validation Dialog Helper
-  Future<void> _showValidationDialog(String message) async {
+  Future<void> _showDialog(String title, String message) async {
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Validation Error"),
-        content: Text(message),
+        backgroundColor: const Color(0xFF0A2647),
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        content: Text(message, style: const TextStyle(color: Colors.white70)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("OK"),
+            child: const Text("OK", style: TextStyle(color: Colors.lightBlueAccent)),
           ),
         ],
       ),
     );
-  }
-
-  // 🔹 Confirmation Dialog before submitting
-  Future<bool> _showConfirmationDialog() async {
-    bool confirmed = false;
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Confirm Submission"),
-        content: const Text("Are you sure you want to add this product?"),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              confirmed = true;
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.lightBlue),
-            child: const Text("Confirm"),
-          ),
-        ],
-      ),
-    );
-    return confirmed;
   }
 
   Future<void> _submitProduct() async {
-    // ✅ Empty field validation
     if (selectedProduct == null ||
         selectedService == null ||
         selectedSize == null ||
         _priceController.text.isEmpty) {
-      _showValidationDialog("Please fill out all fields.");
+      _showDialog("Missing Fields", "Please fill out all required fields.");
       return;
     }
 
-    // ✅ Numeric price validation
     if (double.tryParse(_priceController.text) == null) {
-      _showValidationDialog("Price must be a number.");
+      _showDialog("Invalid Price", "Price must be a valid number.");
       return;
     }
 
-    // ✅ Require image only for Delivery
     if (selectedService == "delivery" && _image == null) {
-      _showValidationDialog("Please select an image for Delivery.");
+      _showDialog("Missing Image", "Please select an image for Delivery products.");
       return;
     }
 
-    // ✅ Ask for confirmation before submitting
-    bool confirm = await _showConfirmationDialog();
+    bool confirm = false;
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0A2647),
+        title: const Text("Confirm Submission", style: TextStyle(color: Colors.white)),
+        content: const Text("Do you want to add this product?",
+            style: TextStyle(color: Colors.white70)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              confirm = true;
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.lightBlueAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
     if (!confirm) return;
 
     try {
@@ -111,6 +106,7 @@ class _AddProductState extends State<AddProduct> {
       request.fields["type"] = selectedService!;
       request.fields["size_category"] = selectedSize!;
       request.fields["price"] = _priceController.text;
+      request.fields["station_id"] = widget.stationId.toString();
 
       if (_image != null) {
         request.files
@@ -120,151 +116,137 @@ class _AddProductState extends State<AddProduct> {
       var response = await request.send();
 
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("✅ Product added successfully"),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("✅ Product added successfully!"),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context);
+        }
       } else if (response.statusCode == 409) {
-        _showValidationDialog("❌ Product already exists.");
+        _showDialog("Duplicate Product", "This product already exists.");
       } else {
-        _showValidationDialog("⚠️ Failed to add product (${response.statusCode}).");
+        _showDialog("Failed", "Error adding product (${response.statusCode}).");
       }
     } catch (e) {
-      _showValidationDialog("❌ Error: $e");
+      _showDialog("Error", "Something went wrong: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Dynamic size options based on service type
     List<String> sizeOptions = [];
     if (selectedService == "onsite") {
       sizeOptions = ["Below 10 Liters", "20 Liters"];
     } else if (selectedService == "delivery") {
       sizeOptions = ["20 Liters"];
-      selectedSize = "20 Liters"; // auto-select 20L
+      selectedSize = "20 Liters";
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFF021526),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A2647),
-        title: const Text(
-          "HydroHub",
-          style: TextStyle(color: Colors.white),
-        ),
-        centerTitle: true,
+        backgroundColor: const Color(0xFF021526),
+        foregroundColor: Colors.white,
+        title: const Text("Add Product", 
+        style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,)),
+        
+        elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 25),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Name of Product", style: TextStyle(color: Colors.white)),
-            const SizedBox(height: 5),
+           
+            const SizedBox(height: 25),
+
+            _buildSectionTitle("Product Name"),
             DropdownButtonFormField<String>(
               value: selectedProduct,
-              dropdownColor: const Color(0xFF144272),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: const Color(0xFF205295),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              items: ["Alkaline", "Mineral", "Distilled"].map((product) {
-                return DropdownMenuItem(
-                    value: product,
-                    child: Text(product,
-                        style: const TextStyle(color: Colors.white)));
-              }).toList(),
+              dropdownColor: const Color(0xFF0A2647),
+              style: const TextStyle(color: Colors.white),
+              decoration: _inputDecoration(),
+              items: ["Alkaline", "Mineral", "Purified", "Distilled"]
+                  .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                  .toList(),
               onChanged: (val) => setState(() => selectedProduct = val),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 25),
 
-            const Text("Type of Service", style: TextStyle(color: Colors.white)),
-            const SizedBox(height: 5),
+            _buildSectionTitle("Type of Service"),
+            const SizedBox(height: 8),
             Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                ChoiceChip(
-                  label: const Text("Onsite"),
-                  selected: selectedService == "onsite",
-                  onSelected: (selected) {
-                    setState(() {
-                      selectedService = "onsite";
-                      selectedSize = null;
-                      _image = null;
-                    });
-                  },
-                ),
-                const SizedBox(width: 10),
-                ChoiceChip(
-                  label: const Text("Delivery"),
-                  selected: selectedService == "delivery",
-                  onSelected: (selected) {
-                    setState(() {
-                      selectedService = "delivery";
-                      selectedSize = "20 Liters";
-                    });
-                  },
-                ),
+                _buildServiceChip("Onsite", "onsite"),
+                const SizedBox(width: 15),
+                _buildServiceChip("Delivery", "delivery"),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 25),
 
             if (selectedService != null) ...[
-              const Text("Size", style: TextStyle(color: Colors.white)),
-              const SizedBox(height: 5),
+              _buildSectionTitle("Size Category"),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 10,
+                runSpacing: 10,
                 children: sizeOptions.map((size) {
+                  final selected = selectedSize == size;
                   return ChoiceChip(
-                    label: Text(size),
-                    selected: selectedSize == size,
-                    onSelected: (selected) {
-                      setState(() => selectedSize = size);
-                    },
+                    label: Text(size,
+                        style: TextStyle(
+                          color: selected ? Colors.white : Colors.white70,
+                        )),
+                    selected: selected,
+                    selectedColor: Colors.lightBlueAccent,
+                    backgroundColor: const Color(0xFF08315C),
+                    onSelected: (_) => setState(() => selectedSize = size),
                   );
                 }).toList(),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 25),
             ],
 
-            const Text("Price", style: TextStyle(color: Colors.white)),
-            const SizedBox(height: 5),
+            _buildSectionTitle("Price"),
+            const SizedBox(height: 8),
             TextField(
               controller: _priceController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: const Color(0xFF205295),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               style: const TextStyle(color: Colors.white),
+              decoration: _inputDecoration(hint: "Enter price (₱)"),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 25),
 
             if (selectedService == "delivery") ...[
-              const Text("Proof Image",
-                  style: TextStyle(color: Colors.white)),
-              const SizedBox(height: 5),
+              _buildSectionTitle("Product Image"),
+              const SizedBox(height: 8),
               Row(
                 children: [
-                  ElevatedButton(
+                  ElevatedButton.icon(
                     onPressed: _pickImage,
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF205295)),
-                    child: const Text("Pick Image",
-                        style: TextStyle(color: Colors.white)),
+                      backgroundColor: Colors.lightBlueAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text("Choose Image"),
                   ),
-                  const SizedBox(width: 10),
-                  _image != null
-                      ? Image.file(_image!, height: 60)
-                      : const SizedBox(),
+                  const SizedBox(width: 15),
+                  if (_image != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(_image!, height: 60, width: 60, fit: BoxFit.cover),
+                    ),
                 ],
               ),
               const SizedBox(height: 30),
@@ -273,25 +255,67 @@ class _AddProductState extends State<AddProduct> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF205295)),
-                  child: const Text("Cancel",
-                      style: TextStyle(color: Colors.white)),
-                ),
-                ElevatedButton(
-                  onPressed: _submitProduct,
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.lightBlue),
-                  child: const Text("Confirm",
-                      style: TextStyle(color: Colors.white)),
-                ),
+                _buildActionButton("Cancel", const Color(0xFF08315C), () {
+                  Navigator.pop(context);
+                }),
+                _buildActionButton("Confirm", Colors.lightBlueAccent, _submitProduct),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+
+  // ---- Helpers ----
+  InputDecoration _inputDecoration({String? hint}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Colors.white54),
+      filled: true,
+      fillColor: const Color(0xFF08315C),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String text) => Text(
+        text,
+        style: const TextStyle(
+          color: Colors.lightBlueAccent,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
+      );
+
+  Widget _buildServiceChip(String label, String value) {
+    final isSelected = selectedService == value;
+    return ChoiceChip(
+      label: Text(label,
+          style: TextStyle(color: isSelected ? Colors.white : Colors.white70)),
+      selected: isSelected,
+      selectedColor: Colors.lightBlueAccent,
+      backgroundColor: const Color(0xFF08315C),
+      onSelected: (_) => setState(() {
+        selectedService = value;
+        if (value == "delivery") selectedSize = "20 Liters";
+      }),
+    );
+  }
+
+  Widget _buildActionButton(String label, Color color, VoidCallback onPressed) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        minimumSize: const Size(140, 50),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        elevation: 3,
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
     );
   }
 }
