@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:hydrohub/Owner/Logs/order_logs.dart';
-import 'package:hydrohub/Owner/Logs/product_logs.dart';
 import 'package:hydrohub/Owner/Logs/sale_logs.dart';
 import 'package:hydrohub/Owner/Logs/stock_logs.dart';
 import '../../../widgets/custom_menu_button.dart';
 import '../home_page.dart';
-
-
+import '../profile.dart'; // ✅ Import profile page
 
 class LogsPage extends StatelessWidget {
-  const LogsPage({super.key});
+  final int stationId; // 🔹 Station ID of the owner
+  final int ownerId;
+
+  const LogsPage({super.key, required this.stationId, required this.ownerId});
 
   @override
   Widget build(BuildContext context) {
@@ -65,12 +66,19 @@ class LogsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Profile Icon aligned top-right
-                  Align(
+                 Align(
                     alignment: Alignment.topRight,
                     child: IconButton(
                       onPressed: () {
-                        // TODO: Add profile page navigation
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => OwnerProfilePage(
+                              ownerId: ownerId,
+                              stationId: stationId,
+                            ),
+                          ),
+                        );
                       },
                       icon: const Icon(
                         Icons.account_circle,
@@ -80,6 +88,7 @@ class LogsPage extends StatelessWidget {
                     ),
                   ),
 
+
                   const SizedBox(height: 20),
 
                   // HydroHub Title centered
@@ -88,7 +97,10 @@ class LogsPage extends StatelessWidget {
                       onTap: () {
                         Navigator.pushReplacement(
                           context,
-                          MaterialPageRoute(builder: (context) => const HomePage()),
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                HomePage(stationId: stationId, ownerId: ownerId) , 
+                          ),
                         );
                       },
                       child: Text.rich(
@@ -123,7 +135,9 @@ class LogsPage extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const SalesLogs()),
+                        MaterialPageRoute(
+                          builder: (context) => SalesLogs(stationId: stationId),
+                        ),
                       );
                     },
                   ),
@@ -134,34 +148,26 @@ class LogsPage extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const OrderLogs()),
+                        MaterialPageRoute(
+                          builder: (context) => OrderLogs(stationId: stationId),
+                        ),
                       );
                     },
                   ),
                   const SizedBox(height: 20),
                   CustomMenuButton(
-                    icon: Icons.history,  
+                    icon: Icons.history,
                     label: "Inventory Logs",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const StockLogs()),
+                        MaterialPageRoute(
+                          builder: (context) => StockLogs(stationId: stationId),
+                        ),
                       );
                     },
                   ),
                   const SizedBox(height: 20),
-                  CustomMenuButton(
-                    icon: Icons.local_mall,
-                    label: "Product Logs",
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const ProductLogs()),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 20),
-                 
                 ],
               ),
             ),
@@ -171,4 +177,3 @@ class LogsPage extends StatelessWidget {
     );
   }
 }
-

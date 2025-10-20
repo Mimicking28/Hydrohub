@@ -3,15 +3,21 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class ArchiveProduct extends StatefulWidget {
-  const ArchiveProduct({super.key});
+  final int stationId; // ✅ Linked to the current water station
+
+  const ArchiveProduct({super.key, required this.stationId});
 
   @override
   State<ArchiveProduct> createState() => _ArchiveProductState();
 }
 
 class _ArchiveProductState extends State<ArchiveProduct> {
-  List<dynamic> products = [];
+  List<dynamic> allProducts = [];
+  List<dynamic> filteredProducts = [];
   bool isLoading = true;
+
+  String selectedFilter = "All"; // "All", "Active", "Archived"
+  String searchQuery = "";
 
   @override
   void initState() {
@@ -19,20 +25,23 @@ class _ArchiveProductState extends State<ArchiveProduct> {
     fetchProducts();
   }
 
+  // ✅ Fetch only products for this station
   Future<void> fetchProducts() async {
-    const String apiUrl = "http://10.0.2.2:3000/api/products";
+    final String apiUrl =
+        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
       if (response.statusCode == 200) {
-        final List<dynamic> allProducts = json.decode(response.body);
+        final List<dynamic> products = json.decode(response.body);
         setState(() {
-          // ✅ Include both archived and non-archived
-          products = allProducts;
+          allProducts = products;
+          applyFilters();
           isLoading = false;
         });
       } else {
-        throw Exception("Server responded ${response.statusCode}");
+        throw Exception("Server responded with ${response.statusCode}");
       }
     } catch (e) {
       setState(() => isLoading = false);
@@ -40,6 +49,33 @@ class _ArchiveProductState extends State<ArchiveProduct> {
     }
   }
 
+  // ✅ Apply search and filter logic
+  void applyFilters() {
+    List<dynamic> results = allProducts;
+
+    // Search filter
+    if (searchQuery.isNotEmpty) {
+      results = results
+          .where((p) => (p["name"] ?? "")
+              .toString()
+              .toLowerCase()
+              .contains(searchQuery.toLowerCase()))
+          .toList();
+    }
+
+    // Status filter
+    if (selectedFilter == "Active") {
+      results = results.where((p) => p["is_archived"] == false).toList();
+    } else if (selectedFilter == "Archived") {
+      results = results.where((p) => p["is_archived"] == true).toList();
+    }
+
+    setState(() {
+      filteredProducts = results;
+    });
+  }
+
+  // ✅ Toggle archive/unarchive
   Future<void> toggleArchive(int id, bool currentlyArchived) async {
     final String apiUrl = "http://10.0.2.2:3000/api/products/archive/$id";
 
@@ -47,18 +83,26 @@ class _ArchiveProductState extends State<ArchiveProduct> {
       final response = await http.put(Uri.parse(apiUrl));
 
       if (response.statusCode == 200) {
-        await fetchProducts(); // ✅ Refresh list
+        // 🔄 Update UI instantly
+        setState(() {
+          for (var p in allProducts) {
+            if (p["id"] == id) {
+              p["is_archived"] = !currentlyArchived;
+            }
+          }
+          applyFilters();
+        });
+
         _showPopupMessage(
           currentlyArchived
-              ? "✅ Product is now available and operational."
-              : "📦 Product archived successfully. It is now unavailable and cannot be sold.",
+              ? "✅ Product restored and now available."
+              : "📦 Product archived successfully.",
           success: true,
         );
       } else {
-        String body = response.body;
         String message = "❌ Failed to update product status.";
         try {
-          final parsed = json.decode(body);
+          final parsed = json.decode(response.body);
           if (parsed is Map && parsed['error'] != null) {
             message = "❌ ${parsed['error']}";
           }
@@ -70,12 +114,13 @@ class _ArchiveProductState extends State<ArchiveProduct> {
     }
   }
 
+  // ✅ Confirmation before archiving/unarchiving
   Future<void> _confirmArchiveToggle(
       int id, bool currentlyArchived, String productName) async {
     String title = currentlyArchived ? "Restore Product?" : "Archive Product?";
     String message = currentlyArchived
-        ? "Are you sure you want to make '$productName' available and operational again?"
-        : "Are you sure you want to archive '$productName'? This product will be unavailable and cannot be sold on the platform.";
+        ? "Are you sure you want to make '$productName' available again?"
+        : "Are you sure you want to archive '$productName'? It will no longer be available to customers.";
 
     bool? confirmed = await showDialog<bool>(
       context: context,
@@ -89,21 +134,23 @@ class _ArchiveProductState extends State<ArchiveProduct> {
         ),
         content: Text(
           message,
-          style: const TextStyle(color: Colors.black87),
+          style: const TextStyle(color: Colors.black87, fontSize: 15),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel",
-                style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            child: const Text(
+              "Cancel",
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: currentlyArchived ? Colors.green : Colors.redAccent,
+              backgroundColor:
+                  currentlyArchived ? Colors.green : Colors.redAccent,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+                  borderRadius: BorderRadius.circular(10)),
             ),
             child: Text(currentlyArchived ? "Go Online" : "Archive"),
           ),
@@ -116,6 +163,7 @@ class _ArchiveProductState extends State<ArchiveProduct> {
     }
   }
 
+  // ✅ Popup dialog for feedback
   void _showPopupMessage(String message, {bool success = false}) {
     showDialog(
       context: context,
@@ -125,13 +173,15 @@ class _ArchiveProductState extends State<ArchiveProduct> {
         title: Text(
           success ? 'Success' : 'Error',
           style: TextStyle(
-              color: success ? Colors.green[900] : Colors.red[900],
-              fontWeight: FontWeight.bold),
+            color: success ? Colors.green[900] : Colors.red[900],
+            fontWeight: FontWeight.bold,
+          ),
         ),
         content: Text(
           message,
           style: TextStyle(
-              color: success ? Colors.green[900] : Colors.red[900]),
+            color: success ? Colors.green[900] : Colors.red[900],
+          ),
         ),
         actions: [
           TextButton(
@@ -143,6 +193,7 @@ class _ArchiveProductState extends State<ArchiveProduct> {
     );
   }
 
+  // ✅ UI Layout
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -153,7 +204,7 @@ class _ArchiveProductState extends State<ArchiveProduct> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
+              // 🔹 Header
               Row(
                 children: [
                   IconButton(
@@ -170,38 +221,99 @@ class _ArchiveProductState extends State<ArchiveProduct> {
                   ),
                 ],
               ),
-              const SizedBox(height: 80),
+              const SizedBox(height: 15),
 
+              // 🔍 Search bar
+              TextField(
+                onChanged: (value) {
+                  searchQuery = value;
+                  applyFilters();
+                },
+                decoration: InputDecoration(
+                  hintText: "Search product...",
+                  hintStyle: const TextStyle(color: Colors.white54),
+                  prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                  filled: true,
+                  fillColor: const Color(0xFF0A2647),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                style: const TextStyle(color: Colors.white),
+              ),
+              const SizedBox(height: 10),
+
+              // 🧩 Filter Chips
+              Center(
+                child: Wrap(
+                  spacing: 10,
+                  alignment: WrapAlignment.center,
+                  children: ["All", "Active", "Archived"].map((filter) {
+                    bool isSelected = selectedFilter == filter;
+                    return ChoiceChip(
+                      label: Text(
+                        filter,
+                        style: TextStyle(
+                          color:
+                              isSelected ? Colors.white : Colors.white70,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        setState(() {
+                          selectedFilter = filter;
+                          applyFilters();
+                        });
+                      },
+                      selectedColor: const Color(0xFF205295),
+                      backgroundColor: const Color(0xFF0A2647),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // 📋 Product List
               Expanded(
                 child: isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : products.isEmpty
+                    : filteredProducts.isEmpty
                         ? const Center(
-                            child: Text("No products found.",
-                                style: TextStyle(color: Colors.white70)))
+                            child: Text(
+                              "No products found.",
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          )
                         : ListView.builder(
-                            itemCount: products.length,
+                            itemCount: filteredProducts.length,
                             itemBuilder: (context, index) {
-                              final product = products[index];
+                              final product = filteredProducts[index];
                               final bool isArchived =
                                   (product["is_archived"] == true) ||
-                                  (product["archived"] == true);
+                                      (product["archived"] == true);
 
                               return Card(
-                                color: const Color.fromARGB(255, 77, 108, 165),
+                                color: const Color(0xFF1C3D73),
                                 margin: const EdgeInsets.symmetric(
                                     vertical: 8, horizontal: 4),
                                 child: ListTile(
                                   title: Text(
                                     "${product["name"] ?? "Unnamed"} (${product["size_category"] ?? ""})",
                                     style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                   subtitle: Text(
                                     "₱${product["price"] ?? "0"} | ${product["type"] ?? ""}",
-                                    style:
-                                        const TextStyle(color: Colors.white70),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                    ),
                                   ),
                                   trailing: ElevatedButton(
                                     onPressed: () => _confirmArchiveToggle(
@@ -215,10 +327,12 @@ class _ArchiveProductState extends State<ArchiveProduct> {
                                           : Colors.green,
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
+                                        borderRadius:
+                                            BorderRadius.circular(10),
                                       ),
                                     ),
-                                    child: Text(isArchived ? "Archived" : "Online"),
+                                    child: Text(
+                                        isArchived ? "Archived" : "Online"),
                                   ),
                                 ),
                               );

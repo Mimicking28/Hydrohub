@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:hydrohub/Owner/Product/archive_product.dart';
 import '../../../widgets/custom_menu_button.dart';
-import '../../../Owner/home_page.dart';
+import '../home_page.dart';
+import '../profile.dart'; // ✅ added import for profile page
 import 'add_product.dart';
 import 'update_product.dart';
 
 class ProductPage extends StatefulWidget {
-  const ProductPage({super.key});
+  final int stationId;
+  final int ownerId;
+  const ProductPage({super.key, required this.stationId, required this.ownerId});
 
   @override
   State<ProductPage> createState() => _ProductPageState();
@@ -27,7 +30,7 @@ class _ProductPageState extends State<ProductPage> {
               width: 200,
               height: 180,
               decoration: BoxDecoration(
-                color: const Color(0xFF6EACDA).withOpacity(0.3),
+                color: const Color(0xFF6EACDA).withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(100),
               ),
             ),
@@ -39,7 +42,7 @@ class _ProductPageState extends State<ProductPage> {
               width: 160,
               height: 170,
               decoration: BoxDecoration(
-                color: const Color(0xFF6EACDA).withOpacity(0.3),
+                color: const Color(0xFF6EACDA).withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(100),
               ),
             ),
@@ -51,7 +54,7 @@ class _ProductPageState extends State<ProductPage> {
               width: 260,
               height: 180,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
+                color: Colors.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(140),
               ),
             ),
@@ -64,12 +67,20 @@ class _ProductPageState extends State<ProductPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Profile icon
+                  // Profile icon (🔹 now working navigation)
                   Align(
                     alignment: Alignment.topRight,
                     child: IconButton(
                       onPressed: () {
-                        // TODO: Profile page navigation
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => OwnerProfilePage(
+                              ownerId: widget.ownerId,
+                              stationId: widget.stationId,
+                            ),
+                          ),
+                        );
                       },
                       icon: const Icon(
                         Icons.account_circle,
@@ -88,7 +99,11 @@ class _ProductPageState extends State<ProductPage> {
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
-                              builder: (context) => const HomePage()),
+                            builder: (context) => HomePage(
+                              stationId: widget.stationId,
+                              ownerId: widget.ownerId,
+                            ),
+                          ),
                         );
                       },
                       child: Text.rich(
@@ -124,12 +139,15 @@ class _ProductPageState extends State<ProductPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const AddProduct(),
+                          builder: (context) => AddProduct(
+                            stationId: widget.stationId,
+                          ),
                         ),
                       );
                     },
                   ),
                   const SizedBox(height: 20),
+
                   CustomMenuButton(
                     icon: Icons.update,
                     label: "Update Product",
@@ -137,11 +155,15 @@ class _ProductPageState extends State<ProductPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (context) => const UpdateProduct()),
+                          builder: (context) => UpdateProduct(
+                            stationId: widget.stationId,
+                          ),
+                        ),
                       );
                     },
                   ),
-                   const SizedBox(height: 20),
+                  const SizedBox(height: 20),
+
                   CustomMenuButton(
                     icon: Icons.archive,
                     label: "Archive Product",
@@ -149,7 +171,10 @@ class _ProductPageState extends State<ProductPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (context) => const ArchiveProduct()),
+                          builder: (context) => ArchiveProduct(
+                            stationId: widget.stationId,
+                          ),
+                        ),
                       );
                     },
                   ),

@@ -1,108 +1,189 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../home_page.dart';
 
 class ReturnStock extends StatefulWidget {
-  const ReturnStock({super.key});
+  final int stationId;
+  final int staffId;
+
+  const ReturnStock({
+    super.key,
+    required this.stationId,
+    required this.staffId,
+  });
 
   @override
   State<ReturnStock> createState() => _ReturnStockState();
 }
 
 class _ReturnStockState extends State<ReturnStock> {
-  String? selectedWaterType;
-  String? selectedSize;
+  String? selectedType;
+  String? selectedReason;
   int amount = 0;
 
-  final List<String> waterTypes = ["Purified", "Mineral", "Alkaline"];
-  final List<String> sizes = ["30L"];
+  List<dynamic> products = [];
+  List<String> waterTypes = []; // Unique 20L types
+  Map<String, int> productMap = {}; // Maps name → product_id
+  bool isLoading = true;
 
-  // ✅ Save stock to backend
+  final List<String> reasons = [
+    "Damaged",
+    "Not Sold",
+    "Customer Return",
+    "Other"
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    fetchProductsForStation();
+  }
+
+  // ✅ Fetch unique 20-liter products
+  Future<void> fetchProductsForStation() async {
+    final String apiUrl =
+        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+
+        // Filter 20-liter products only
+        final filtered = data.where((p) {
+          final size = (p["size_category"] ?? "").toString().toLowerCase();
+          return size.contains("20") && size.contains("liter");
+        }).toList();
+
+        // Remove duplicates by name
+        final Map<String, int> uniqueProducts = {};
+        for (var p in filtered) {
+          final name = (p["name"] ?? "").toString();
+          if (!uniqueProducts.containsKey(name)) {
+            uniqueProducts[name] = p["id"];
+          }
+        }
+
+        setState(() {
+          products = filtered;
+          productMap = uniqueProducts;
+          waterTypes = uniqueProducts.keys.toList();
+          isLoading = false;
+        });
+      } else {
+        throw Exception("Failed to fetch products");
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Failed to load products: $e")),
+      );
+    }
+  }
+
+  // ✅ Save returned stock with reason
   Future<void> saveStockToDatabase({
-    required String waterType,
-    required String size,
+    required int productId,
     required int amount,
     required String date,
+    required String reason,
   }) async {
     const String apiUrl = "http://10.0.2.2:3000/api/stocks";
 
-    final response = await http.post(
-      Uri.parse(apiUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: '''
-        {
-          "water_type": "$waterType",
-          "size": "$size",
-          "amount": $amount,
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "product_id": productId,
+          "amount": amount,
           "stock_type": "returned",
-          "reason": "",
-          "date": "$date"
-        }
-      ''',
-    );
+          "reason": reason,
+          "date": date,
+          "staff_id": widget.staffId,
+        }),
+      );
 
-    if (response.statusCode != 200 && response.statusCode != 201) {
+      if (response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Stock returned successfully")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Failed: ${response.body}")),
+        );
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Failed to return stock: ${response.body}")),
+        SnackBar(content: Text("⚠️ Error saving: $e")),
       );
     }
   }
 
   // ✅ Confirm return logic
-  void _confirmAdd() async {
-    if (selectedWaterType == null || selectedSize == null || amount <= 0) {
+  void _confirmReturn() async {
+    if (selectedType == null || amount <= 0 || selectedReason == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ Please complete all fields")),
+        const SnackBar(content: Text("⚠️ Please fill out all fields")),
       );
       return;
     }
 
-    final finalWaterType = selectedWaterType!;
-    final finalSize = selectedSize!;
-    final finalAmount = amount;
+    final productId = productMap[selectedType];
+    if (productId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("⚠️ Product not found")),
+      );
+      return;
+    }
 
-    // Save UTC for backend
+    // Use UTC for DB
     final nowUtc = DateTime.now().toUtc();
     final isoUtc = nowUtc.toIso8601String();
 
-    // Display PH time for user
+    // Convert for display (PH Time)
     final phTime = nowUtc.add(const Duration(hours: 8));
     final formattedPHTime = DateFormat('yyyy-MM-dd hh:mm a').format(phTime);
 
     await saveStockToDatabase(
-      waterType: finalWaterType,
-      size: finalSize,
-      amount: finalAmount,
-      date: isoUtc, // backend gets UTC
+      productId: productId,
+      amount: amount,
+      date: isoUtc,
+      reason: selectedReason!,
     );
 
-    // Confirmation dialog
+    // ✅ Confirmation dialog
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF1B263B),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text(
-            "✅ Stock Returned",
-            style: TextStyle(color: Colors.white),
-          ),
+          title:
+              const Text("♻️ Stock Returned", style: TextStyle(color: Colors.white)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Type: $finalWaterType", style: const TextStyle(color: Colors.white)),
-              Text("Size: $finalSize", style: const TextStyle(color: Colors.white)),
-              Text("Amount: $finalAmount", style: const TextStyle(color: Colors.white)),
-              Text("Date: $formattedPHTime", style: const TextStyle(color: Colors.white)),
+              Text("Water Type: $selectedType",
+                  style: const TextStyle(color: Colors.white)),
+              const Text("Size: 20 Liters",
+                  style: TextStyle(color: Colors.white)),
+              Text("Amount: $amount",
+                  style: const TextStyle(color: Colors.white)),
+              Text("Reason: $selectedReason",
+                  style: const TextStyle(color: Colors.white)),
+              Text("Date: $formattedPHTime",
+                  style: const TextStyle(color: Colors.white)),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                Navigator.pop(context);
+                Navigator.pop(context, true);
               },
               child: const Text("OK", style: TextStyle(color: Colors.blue)),
             ),
@@ -111,8 +192,8 @@ class _ReturnStockState extends State<ReturnStock> {
       },
     ).then((_) {
       setState(() {
-        selectedWaterType = null;
-        selectedSize = null;
+        selectedType = null;
+        selectedReason = null;
         amount = 0;
       });
     });
@@ -122,233 +203,214 @@ class _ReturnStockState extends State<ReturnStock> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF021526),
-      body: Stack(
-        children: [
-          // 🔵 Decorative shapes
-          Positioned(
-            top: -80,
-            right: -60,
-            child: Container(
-              width: 200,
-              height: 180,
-              decoration: BoxDecoration(
-                color: const Color(0xFF6EACDA).withOpacity(0.3),
-                borderRadius: BorderRadius.circular(100),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -60,
-            left: -80,
-            child: Container(
-              width: 260,
-              height: 180,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(140),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  // 🔹 Top bar
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const HomePage(),
+      body: isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: Colors.lightBlueAccent),
+            )
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    // 🔹 Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => HomePage(
+                                  stationId: widget.stationId,
+                                  staffId: widget.staffId,
+                                ),
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            "HydroHub",
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
-                          );
-                        },
-                        child: const Text(
-                          "HydroHub",
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
                           ),
                         ),
-                      ),
-                      const Icon(Icons.account_circle, color: Colors.white, size: 32),
-                    ],
-                  ),
+                        const Icon(Icons.account_circle,
+                            color: Colors.white, size: 32),
+                      ],
+                    ),
 
-                  // 🔹 Form content
-                  Expanded(
-                    child: Center(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const SizedBox(height: 20),
+                    const SizedBox(height: 40),
 
-                            // Water Type Dropdown
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1B263B),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: DropdownButton<String>(
-                                hint: const Text("Water Type", style: TextStyle(color: Colors.white)),
-                                value: selectedWaterType,
-                                dropdownColor: const Color(0xFF1B263B),
-                                iconEnabledColor: Colors.white,
-                                isExpanded: true,
-                                underline: const SizedBox(),
-                                items: waterTypes.map((type) {
-                                  return DropdownMenuItem(
-                                    value: type,
-                                    child: Text(type, style: const TextStyle(color: Colors.white)),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    selectedWaterType = value;
-                                  });
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Label for Size
-                            const Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                "Select Size:",
-                                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-
-                            // Size buttons
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: sizes.map((size) {
-                                final isSelected = selectedSize == size;
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  child: ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: isSelected ? Colors.blue : const Color(0xFF1B263B),
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        selectedSize = size;
-                                      });
-                                    },
-                                    child: Text(size),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Label for Number of Containers
-                            const Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                "Number of Containers:",
-                                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-
-                            // Amount Counter
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                ElevatedButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      if (amount > 0) amount--;
-                                    });
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1B263B),
-                                    foregroundColor: const Color.fromARGB(255, 184, 35, 35),
-                                    shape: const CircleBorder(),
-                                    padding: const EdgeInsets.all(20),
-                                  ),
-                                  child: const Text("-", style: TextStyle(fontSize: 24)),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                                  child: Text("$amount", style: const TextStyle(fontSize: 20, color: Colors.white)),
-                                ),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      amount++;
-                                    });
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1B263B),
-                                    foregroundColor: const Color.fromARGB(255, 14, 166, 90),
-                                    shape: const CircleBorder(),
-                                    padding: const EdgeInsets.all(20),
-                                  ),
-                                  child: const Text("+", style: TextStyle(fontSize: 24)),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 30),
-
-                            // Confirm + Cancel buttons
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color.fromARGB(255, 14, 166, 90),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                                  ),
-                                  onPressed: _confirmAdd,
-                                  child: const Text("Confirm"),
-                                ),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blue,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                                  ),
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                  },
-                                  child: const Text("Cancel"),
-                                ),
-                              ],
-                            ),
-                          ],
+                    // 🔹 Dropdown for 20L products
+                    if (waterTypes.isEmpty)
+                      const Center(
+                        child: Text("No 20-Liter products available",
+                            style: TextStyle(color: Colors.white70)),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1B263B),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: DropdownButton<String>(
+                          hint: const Text("Select Water Type",
+                              style: TextStyle(color: Colors.white)),
+                          value: selectedType,
+                          dropdownColor: const Color(0xFF1B263B),
+                          iconEnabledColor: Colors.white,
+                          isExpanded: true,
+                          underline: const SizedBox(),
+                          items: waterTypes.map((type) {
+                            return DropdownMenuItem(
+                              value: type,
+                              child: Text(type,
+                                  style: const TextStyle(color: Colors.white)),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() => selectedType = value);
+                          },
                         ),
                       ),
+
+                    const SizedBox(height: 25),
+
+                    const Text("Size: 20 Liters",
+                        style: TextStyle(color: Colors.white70, fontSize: 16)),
+
+                    const SizedBox(height: 30),
+
+                    // 🔹 Reason Dropdown
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1B263B),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: DropdownButton<String>(
+                        hint: const Text("Select Reason",
+                            style: TextStyle(color: Colors.white)),
+                        value: selectedReason,
+                        dropdownColor: const Color(0xFF1B263B),
+                        iconEnabledColor: Colors.white,
+                        isExpanded: true,
+                        underline: const SizedBox(),
+                        items: reasons.map((r) {
+                          return DropdownMenuItem(
+                            value: r,
+                            child: Text(r,
+                                style: const TextStyle(color: Colors.white)),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() => selectedReason = value);
+                        },
+                      ),
                     ),
-                  ),
-                ],
+
+                    const SizedBox(height: 30),
+
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Number of Containers:",
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Amount counter
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              if (amount > 0) amount--;
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1B263B),
+                            foregroundColor: Colors.red,
+                            shape: const CircleBorder(),
+                            padding: const EdgeInsets.all(20),
+                          ),
+                          child: const Text("-", style: TextStyle(fontSize: 24)),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            "$amount",
+                            style: const TextStyle(
+                                fontSize: 20, color: Colors.white),
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            setState(() => amount++);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1B263B),
+                            foregroundColor: Colors.green,
+                            shape: const CircleBorder(),
+                            padding: const EdgeInsets.all(20),
+                          ),
+                          child: const Text("+", style: TextStyle(fontSize: 24)),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 30),
+
+                    // 🔹 Confirm + Cancel Buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 30,
+                              vertical: 15,
+                            ),
+                          ),
+                          onPressed: _confirmReturn,
+                          child: const Text("Confirm"),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 30,
+                              vertical: 15,
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Cancel"),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
     );
   }
 }

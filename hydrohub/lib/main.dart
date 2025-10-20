@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'owner/home_page.dart';
+//import 'package:hydrohub/Administrator/home_page.dart';
+import 'package:hydrohub/Screen/splash_page.dart';
+
 
 void main() {
   runApp(const HydroHubApp());
@@ -17,7 +19,7 @@ class HydroHubApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         fontFamily: 'Arial',
       ),
-      home: const HomePage(),
+      home: const SplashScreen(),
     );
   }
 }

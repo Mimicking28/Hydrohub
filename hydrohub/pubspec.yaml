@@ -37,6 +37,7 @@ dependencies:
   http: ^1.2.1
   intl: ^0.19.0
   image_picker: ^1.0.8   # <-- Added for camera/gallery support
+  shared_preferences: ^2.3.2   # <-- Added for Remember Me + Auto-login support ✅
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +63,7 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   # assets:
+      
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

@@ -23,29 +23,34 @@ class _SalesLogsState extends State<SalesLogs> {
   // ✅ Fetch all sales (delivery + onsite)
   Future<void> fetchSales() async {
     const String apiUrl = "http://10.0.2.2:3000/api/sales";
-    final response = await http.get(Uri.parse(apiUrl));
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
 
-    if (response.statusCode == 200) {
-      setState(() {
-        sales = json.decode(response.body);
-        isLoading = false;
-      });
+      if (response.statusCode == 200) {
+        setState(() {
+          sales = json.decode(response.body);
+          isLoading = false;
+        });
 
-      // Debug print all sales data
-      for (var sale in sales) {
-        debugPrint("Sale: $sale");
+        // Debug print all sales data
+        for (var sale in sales) {
+          debugPrint("Sale: $sale");
+        }
+      } else {
+        setState(() => isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Failed to fetch sales logs: ${response.statusCode}")),
+        );
       }
-    } else {
-      setState(() {
-        isLoading = false;
-      });
+    } catch (e) {
+      setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("❌ Failed to fetch sales logs")),
+        SnackBar(content: Text("❌ Error fetching sales: $e")),
       );
     }
   }
 
-  // ✅ Format date to PH time
+  // ✅ Format UTC to Philippine time
   String formatToPHTime(String utcString) {
     try {
       final utcTime = DateTime.parse(utcString).toUtc();
@@ -56,7 +61,7 @@ class _SalesLogsState extends State<SalesLogs> {
     }
   }
 
-  // ✅ Show photo popup
+  // ✅ Show payment proof dialog
   void showPhotoDialog(String imageUrl) {
     showDialog(
       context: context,
@@ -71,19 +76,18 @@ class _SalesLogsState extends State<SalesLogs> {
                 imageUrl,
                 fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.broken_image,
-                        size: 80, color: Colors.white),
+                    const Icon(Icons.broken_image, size: 80, color: Colors.white),
               ),
             ),
             const SizedBox(height: 12),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
+                backgroundColor: Colors.redAccent,
                 foregroundColor: Colors.white,
               ),
               onPressed: () => Navigator.pop(context),
               child: const Text("Close"),
-            )
+            ),
           ],
         ),
       ),
@@ -116,10 +120,9 @@ class _SalesLogsState extends State<SalesLogs> {
                   itemBuilder: (context, index) {
                     final sale = sales[index];
                     final isEwallet =
-                        sale["payment_method"].toString().toLowerCase() ==
-                            "e-wallet";
+                        sale["payment_method"].toString().toLowerCase() == "e-wallet";
 
-                    // ✅ Build full URL for proof image
+                    // ✅ Full URL for proof image
                     final proofUrl = sale["proof"] != null &&
                             sale["proof"].toString().isNotEmpty
                         ? "http://10.0.2.2:3000/uploads/${sale["proof"]}"
@@ -127,15 +130,15 @@ class _SalesLogsState extends State<SalesLogs> {
 
                     return Card(
                       color: const Color(0xFF1B263B),
-                      margin: const EdgeInsets.symmetric(
-                          vertical: 8, horizontal: 12),
+                      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // 💧 Water Type
                             Text(
-                              "💧 Water: ${sale["water_type"]} (${sale["size"]})",
+                              "💧 Water: ${sale["water_type"] ?? "Unknown"} (${sale["size"] ?? "N/A"})",
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 20,
@@ -143,7 +146,11 @@ class _SalesLogsState extends State<SalesLogs> {
                               ),
                             ),
                             const SizedBox(height: 8),
+
+                            // 📋 Details
                             Text(
+                              "🏪 Station: ${sale["station_name"] ?? "N/A"}\n"
+                              "👷 Recorded by: ${sale["first_name"] ?? ""} ${sale["last_name"] ?? ""}\n"
                               "📦 Quantity: ${sale["quantity"]}\n"
                               "💰 Total: ₱${sale["total"]}\n"
                               "💳 Payment: ${sale["payment_method"]}\n"
@@ -155,6 +162,9 @@ class _SalesLogsState extends State<SalesLogs> {
                                 height: 1.5,
                               ),
                             ),
+                            const SizedBox(height: 8),
+
+                            // 🧾 Proof Button
                             if (isEwallet && proofUrl != null)
                               Align(
                                 alignment: Alignment.center,
@@ -172,10 +182,8 @@ class _SalesLogsState extends State<SalesLogs> {
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                   ),
-                                  onPressed: () {
-                                    showPhotoDialog(proofUrl);
-                                  },
-                                  child: const Text("View Photo"),
+                                  onPressed: () => showPhotoDialog(proofUrl),
+                                  child: const Text("View Proof"),
                                 ),
                               ),
                           ],

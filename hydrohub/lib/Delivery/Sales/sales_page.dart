@@ -1,21 +1,27 @@
 import 'package:flutter/material.dart';
 import '../../../widgets/custom_menu_button.dart';
-import '../../../Delivery/home_page.dart';
+import '../../Delivery/home_page.dart';
 import 'add_sales.dart';
-import '../../Delivery/Sales/update_sales.dart';
-
-
+import 'update_sales.dart';
+import '../profile.dart'; // ✅ delivery profile page
 
 class SalesPage extends StatelessWidget {
-  const SalesPage({super.key});
+  final int stationId;
+  final int staffId;
+
+  const SalesPage({
+    super.key,
+    required this.stationId,
+    required this.staffId,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF021526), // Dark background
+      backgroundColor: const Color(0xFF021526),
       body: Stack(
         children: [
-          // 🔵 Top-right oval
+          // 🌊 HydroHub glowing background
           Positioned(
             top: -80,
             right: -60,
@@ -23,12 +29,11 @@ class SalesPage extends StatelessWidget {
               width: 200,
               height: 180,
               decoration: BoxDecoration(
-                color: const Color(0xFF6EACDA).withValues(alpha: 0.3),
+                color: const Color(0xFF6EACDA).withOpacity(0.3),
                 borderRadius: BorderRadius.circular(100),
               ),
             ),
           ),
-          // 🔵 Slightly lower top-right oval
           Positioned(
             top: -10,
             right: -80,
@@ -36,13 +41,11 @@ class SalesPage extends StatelessWidget {
               width: 160,
               height: 170,
               decoration: BoxDecoration(
-                color: const Color(0xFF6EACDA).withValues(alpha: 0.3),
+                color: const Color(0xFF6EACDA).withOpacity(0.3),
                 borderRadius: BorderRadius.circular(100),
               ),
             ),
           ),
-
-          // 🔵 Bottom-left oval
           Positioned(
             bottom: -60,
             left: -80,
@@ -50,25 +53,33 @@ class SalesPage extends StatelessWidget {
               width: 260,
               height: 180,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
+                color: Colors.white.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(140),
               ),
             ),
           ),
 
-          // Foreground Content
+          // Foreground content
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Profile Icon aligned top-right
+                  // 👤 Profile icon
                   Align(
                     alignment: Alignment.topRight,
                     child: IconButton(
                       onPressed: () {
-                        // TODO: Add profile page navigation
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => DeliveryProfilePage(
+                              stationId: stationId,
+                              staffId: staffId,
+                            ),
+                          ),
+                        );
                       },
                       icon: const Icon(
                         Icons.account_circle,
@@ -77,18 +88,22 @@ class SalesPage extends StatelessWidget {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 20),
 
-                  // HydroHub Title centered
-                  Center(
-                    child: GestureDetector(
-                      onTap: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => const HomePage()),
-                        );
-                      },
+                  // 💧 HydroHub header
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => HomePage(
+                            stationId: stationId,
+                            staffId: staffId,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Center(
                       child: Text.rich(
                         TextSpan(
                           text: 'Hydro',
@@ -97,7 +112,7 @@ class SalesPage extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
-                          children: <TextSpan>[
+                          children: [
                             TextSpan(
                               text: 'Hub',
                               style: TextStyle(
@@ -112,31 +127,43 @@ class SalesPage extends StatelessWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 60),
+                  const SizedBox(height: 50),
 
-                  // Buttons
+                  // 💰 Add Sales
                   CustomMenuButton(
-                    icon: Icons.attach_money,
+                    icon: Icons.add_shopping_cart,
                     label: "Add Sales",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const AddSale()),
+                        MaterialPageRoute(
+                          builder: (context) => AddSale(
+                            stationId: stationId,
+                            staffId: staffId,
+                          ),
+                        ),
                       );
                     },
                   ),
+
                   const SizedBox(height: 20),
+
+                  // 🧾 Update Sales
                   CustomMenuButton(
-                    icon: Icons.local_shipping,
+                    icon: Icons.receipt_long,
                     label: "Update Sales",
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const UpdateSales()),
+                        MaterialPageRoute(
+                          builder: (context) => UpdateSales(
+                            stationId: stationId,
+                            staffId: staffId,
+                          ),
+                        ),
                       );
                     },
                   ),
-                  const SizedBox(height: 20),
                 ],
               ),
             ),
@@ -146,4 +173,3 @@ class SalesPage extends StatelessWidget {
     );
   }
 }
-
