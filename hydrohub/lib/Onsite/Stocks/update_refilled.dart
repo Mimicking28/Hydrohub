@@ -30,27 +30,36 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
     fetchProductsForStation();
   }
 
-  // ✅ Fetch only unique 20L products from this station
+  // ✅ Fetch only ACTIVE 20L DELIVERY products for this station
   Future<void> fetchProductsForStation() async {
-    final url = "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+    final url =
+        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}&type=delivery";
+
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
 
-        // Filter for 20-liter items
+        // 🔹 Filter for delivery, 20 liters, active only
         final filtered = data.where((p) {
+          final type = (p["type"] ?? "").toString().toLowerCase().trim();
           final size = (p["size_category"] ?? "").toString().toLowerCase();
-          return size.contains("20") && size.contains("liter");
+          final archived = p["is_archived"];
+          final bool isActive = (archived == false ||
+              archived == 0 ||
+              archived == null ||
+              archived.toString().toLowerCase() == "false");
+
+          return type == "delivery" &&
+              size.contains("20") &&
+              size.contains("liter") &&
+              isActive;
         }).toList();
 
-        // Remove duplicates (onsite + delivery considered same)
+        // 🔹 Create map of product name → id (duplicates allowed)
         final Map<String, int> uniqueProducts = {};
         for (var p in filtered) {
-          final name = (p["name"] ?? "").toString();
-          if (!uniqueProducts.containsKey(name)) {
-            uniqueProducts[name] = p["id"];
-          }
+          uniqueProducts[p["name"]] = p["id"];
         }
 
         setState(() {
@@ -65,14 +74,16 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
       }
     } catch (e) {
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("❌ Failed to load products: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Failed to load products: $e")),
+      );
     }
   }
 
-  // ✅ Fetch refilled stock records for this station
+  // ✅ Fetch refilled stock records
   Future<void> fetchRefilledStocks() async {
-    final url = "http://10.0.2.2:3000/api/stocks/refilled?station_id=${widget.stationId}";
+    final url =
+        "http://10.0.2.2:3000/api/stocks/type/${widget.stationId}/refilled";
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
@@ -86,8 +97,9 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
       }
     } catch (e) {
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("⚠️ Error fetching stocks: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("⚠️ Error fetching stocks: $e")),
+      );
     }
   }
 
@@ -107,23 +119,29 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
         );
         fetchRefilledStocks();
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("❌ Update failed: ${response.body}")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Update failed: ${response.body}")),
+        );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("⚠️ Error updating: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("⚠️ Error updating: $e")),
+      );
     }
   }
 
-  // ✅ Update Dialog
+  // ✅ Update Dialog (no archived products in dropdown)
   void showUpdateDialog(Map<String, dynamic> stock) {
     final currentProduct = products.firstWhere(
       (p) => p["id"] == stock["product_id"],
       orElse: () => {},
     );
 
-    String selectedType = currentProduct["name"] ?? "Unknown";
+    String selectedType =
+        currentProduct["name"] != null && waterTypes.contains(currentProduct["name"])
+            ? currentProduct["name"]
+            : (waterTypes.isNotEmpty ? waterTypes.first : "");
+
     int amount = stock["amount"];
 
     showDialog(
@@ -140,9 +158,10 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Water Type Dropdown
                 DropdownButton<String>(
-                  value: selectedType,
+                  value: waterTypes.contains(selectedType) ? selectedType : null,
+                  hint: const Text("Select Water Type",
+                      style: TextStyle(color: Colors.white)),
                   dropdownColor: const Color(0xFF1B263B),
                   iconEnabledColor: Colors.white,
                   isExpanded: true,
@@ -150,8 +169,8 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
                   items: waterTypes.map((type) {
                     return DropdownMenuItem(
                       value: type,
-                      child:
-                          Text(type, style: const TextStyle(color: Colors.white)),
+                      child: Text(type,
+                          style: const TextStyle(color: Colors.white)),
                     );
                   }).toList(),
                   onChanged: (value) {
@@ -164,8 +183,6 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
                 const Text("Size: 20 Liters",
                     style: TextStyle(color: Colors.white70)),
                 const SizedBox(height: 10),
-
-                // Amount Counter
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -178,8 +195,8 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
                       icon: const Icon(Icons.remove_circle, color: Colors.white),
                     ),
                     Text("$amount",
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 18)),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 18)),
                     IconButton(
                       onPressed: () {
                         setDialogState(() {
@@ -195,8 +212,8 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child:
-                    const Text("Cancel", style: TextStyle(color: Colors.redAccent)),
+                child: const Text("Cancel",
+                    style: TextStyle(color: Colors.redAccent)),
               ),
               TextButton(
                 onPressed: () {
@@ -260,17 +277,12 @@ class _UpdateRefilledState extends State<UpdateRefilled> {
                   itemCount: stocks.length,
                   itemBuilder: (context, index) {
                     final stock = stocks[index];
-                    final product = products.firstWhere(
-                      (p) => p["id"] == stock["product_id"],
-                      orElse: () => {},
-                    );
-
-                    final name = product["name"] ?? "Unknown";
+                    final name = stock["product_name"] ?? "Unknown Product";
 
                     return Card(
                       color: const Color(0xFF1B263B),
-                      margin:
-                          const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      margin: const EdgeInsets.symmetric(
+                          vertical: 8, horizontal: 12),
                       child: ListTile(
                         title: Text(
                           "$name - 20 Liters",

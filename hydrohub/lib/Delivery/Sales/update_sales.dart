@@ -47,15 +47,24 @@ class _UpdateSalesState extends State<UpdateSales>
     await fetchSales();
   }
 
-  // ✅ Fetch products for this station
+  // ✅ Fetch only active (not archived) delivery products for this station
   Future<void> fetchProducts() async {
     final String apiUrl =
         "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
     final response = await http.get(Uri.parse(apiUrl));
 
     if (response.statusCode == 200) {
+      final List<dynamic> allProducts = json.decode(response.body);
+
+      // ✅ Filter: only NOT archived + delivery type
+      final List<dynamic> filteredProducts = allProducts.where((p) {
+        final bool isArchived = p["is_archived"] == true; // Boolean
+        final type = (p["type"] ?? "").toString().toLowerCase();
+        return !isArchived && type == "delivery";
+      }).toList();
+
       setState(() {
-        products = json.decode(response.body);
+        products = filteredProducts;
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -129,7 +138,9 @@ class _UpdateSalesState extends State<UpdateSales>
   }
 
   // ✅ Show Update Dialog
-  void showUpdateDialog(Map<String, dynamic> sale) {
+  void showUpdateDialog(Map<String, dynamic> sale) async {
+    await fetchProducts(); // Always refresh before showing dropdown
+
     String selectedWater = sale["water_type"];
     String selectedSize = sale["size"];
     int quantity = sale["quantity"];
@@ -177,7 +188,9 @@ class _UpdateSalesState extends State<UpdateSales>
                   children: [
                     // 🔹 Water Type
                     DropdownButtonFormField<String>(
-                      value: selectedWater,
+                      value: waterTypeToSizes.containsKey(selectedWater)
+                          ? selectedWater
+                          : null,
                       dropdownColor: const Color(0xFF1B263B),
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
@@ -185,7 +198,10 @@ class _UpdateSalesState extends State<UpdateSales>
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
                       items: waterTypeToSizes.keys.map((type) {
-                        return DropdownMenuItem(value: type, child: Text(type));
+                        return DropdownMenuItem(
+                          value: type,
+                          child: Text(type, style: const TextStyle(color: Colors.white)),
+                        );
                       }).toList(),
                       onChanged: (val) {
                         setDialogState(() {
@@ -207,7 +223,10 @@ class _UpdateSalesState extends State<UpdateSales>
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
                       items: (waterTypeToSizes[selectedWater] ?? [])
-                          .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                          .map((s) => DropdownMenuItem(
+                                value: s,
+                                child: Text(s, style: const TextStyle(color: Colors.white)),
+                              ))
                           .toList(),
                       onChanged: (val) {
                         setDialogState(() {
@@ -263,7 +282,9 @@ class _UpdateSalesState extends State<UpdateSales>
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
                       items: paymentMethods.map((e) {
-                        return DropdownMenuItem(value: e, child: Text(e));
+                        return DropdownMenuItem(
+                            value: e,
+                            child: Text(e, style: const TextStyle(color: Colors.white)));
                       }).toList(),
                       onChanged: (val) => setDialogState(() => payment = val!),
                     ),
@@ -378,7 +399,8 @@ class _UpdateSalesState extends State<UpdateSales>
                                 "₱${sale["total"]}\n"
                                 "${sale["payment_method"]}\n"
                                 "${formatToPHTime(sale["date"])}",
-                                style: const TextStyle(color: Colors.white70),
+                                style:
+                                    const TextStyle(color: Colors.white70),
                               ),
                               trailing: ElevatedButton(
                                 style: ElevatedButton.styleFrom(

@@ -25,10 +25,10 @@ class _ArchiveProductState extends State<ArchiveProduct> {
     fetchProducts();
   }
 
-  // ✅ Fetch only products for this station
+  // ✅ Fetch only products for this station (fixed route)
   Future<void> fetchProducts() async {
     final String apiUrl =
-        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/products/owner/${widget.stationId}";
 
     try {
       final response = await http.get(Uri.parse(apiUrl));
@@ -75,14 +75,18 @@ class _ArchiveProductState extends State<ArchiveProduct> {
     });
   }
 
-  // ✅ Toggle archive/unarchive
+  // ✅ Toggle archive/unarchive (fixed route + success message)
   Future<void> toggleArchive(int id, bool currentlyArchived) async {
-    final String apiUrl = "http://10.0.2.2:3000/api/products/archive/$id";
+    final String apiUrl =
+        "http://10.0.2.2:3000/api/products/owner/archive/$id";
 
     try {
       final response = await http.put(Uri.parse(apiUrl));
 
       if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final message = data["message"] ?? "Status updated successfully.";
+
         // 🔄 Update UI instantly
         setState(() {
           for (var p in allProducts) {
@@ -93,12 +97,7 @@ class _ArchiveProductState extends State<ArchiveProduct> {
           applyFilters();
         });
 
-        _showPopupMessage(
-          currentlyArchived
-              ? "✅ Product restored and now available."
-              : "📦 Product archived successfully.",
-          success: true,
-        );
+        _showPopupMessage(message, success: true);
       } else {
         String message = "❌ Failed to update product status.";
         try {

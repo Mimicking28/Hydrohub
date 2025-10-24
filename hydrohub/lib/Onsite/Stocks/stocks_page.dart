@@ -30,9 +30,7 @@ class _StocksPageState extends State<StocksPage> {
     setState(() => isLoading = true);
     try {
       final response = await http.get(
-        Uri.parse(
-          "http://10.0.2.2:3000/api/stocks/stock_summary?station_id=${widget.stationId}",
-        ),
+      Uri.parse("http://10.0.2.2:3000/api/stocks/summary/${widget.stationId}"),
       );
 
       if (response.statusCode == 200) {
@@ -72,7 +70,7 @@ class _StocksPageState extends State<StocksPage> {
         children: [
           Expanded(
             child: Text(
-              cleanProductName(stock["name"]),
+              cleanProductName(stock["product_name"]),
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.white,

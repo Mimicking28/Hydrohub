@@ -118,7 +118,148 @@ router.put("/admin/:id", async (req, res) => {
     res.status(500).json({ error: "Server error updating admin" });
   }
 });
+/* ================================================================
+ 💧 STATIONS SECTION
+================================================================ */
+/* ================================================================
+ 🏢 STATION SECTION
+================================================================ */
 
+// ✅ GET ALL STATIONS
+router.get("/stations", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        s.station_id,
+        s.station_name,
+        s.status,
+        COUNT(o.owner_id) AS total_owners,
+        COUNT(st.staff_id) AS total_staff
+      FROM water_refilling_stations s
+      LEFT JOIN owners o ON s.station_id = o.station_id
+      LEFT JOIN staff st ON s.station_id = st.station_id
+      GROUP BY s.station_id
+      ORDER BY s.station_name ASC
+    `);
+
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error("❌ Error fetching stations:", err);
+    res.status(500).json({ error: "Server error fetching stations" });
+  }
+});
+
+// ✅ TOGGLE STATION STATUS (cascade owners + staff)
+router.put("/stations/status/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check current station status
+    const stationCheck = await pool.query(
+      "SELECT status FROM water_refilling_stations WHERE station_id = $1",
+      [id]
+    );
+    if (stationCheck.rows.length === 0)
+      return res.status(404).json({ error: "Station not found" });
+
+    const currentStatus = stationCheck.rows[0].status;
+    const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
+
+    // Update station
+    await pool.query(
+      "UPDATE water_refilling_stations SET status = $1 WHERE station_id = $2",
+      [newStatus, id]
+    );
+
+    // ✅ Cascade status to linked accounts
+    await pool.query("UPDATE owners SET status = $1 WHERE station_id = $2", [newStatus, id]);
+    await pool.query("UPDATE staff SET status = $1 WHERE station_id = $2", [newStatus, id]);
+
+    res.status(200).json({
+      success: true,
+      message:
+        newStatus === "Active"
+          ? "✅ Station reactivated along with linked accounts."
+          : "🚫 Station deactivated along with linked accounts.",
+    });
+  } catch (err) {
+    console.error("❌ Error toggling station status:", err);
+    res.status(500).json({ error: "Server error updating station status" });
+  }
+});
+/* ================================================================
+ 📋 ALL ACCOUNTS (ADMIN DASHBOARD) — includes password
+================================================================ */
+
+// ✅ Fetch all account types (Administrator, Owners, Staff)
+router.get("/all", async (req, res) => {
+  try {
+    // 🧩 Fetch Administrators
+    const admins = await pool.query(`
+      SELECT 
+        admin_id AS id,
+        first_name,
+        last_name,
+        gender,
+        phone_number,
+        username,
+        password,
+        'Administrator' AS role,
+        NULL AS type,
+        NULL AS station_name,
+        NULL AS status
+      FROM administrator
+    `);
+
+    // 🧩 Fetch Owners (joined with station)
+    const owners = await pool.query(`
+      SELECT 
+        owner_id AS id,
+        first_name,
+        last_name,
+        gender,
+        phone_number,
+        username,
+        password,
+        'Owner' AS role,
+        NULL AS type,
+        s.station_name,
+        o.status
+      FROM owners o
+      LEFT JOIN water_refilling_stations s ON o.station_id = s.station_id
+    `);
+
+    // 🧩 Fetch Staff (joined with station)
+    const staff = await pool.query(`
+      SELECT 
+        staff_id AS id,
+        first_name,
+        last_name,
+        gender,
+        phone_number,
+        username,
+        password,
+        'Staff' AS role,
+        type,
+        s.station_name,
+        st.status
+      FROM staff st
+      LEFT JOIN water_refilling_stations s ON st.station_id = s.station_id
+    `);
+
+    // 🧩 Combine all results
+    const combined = [
+      ...admins.rows,
+      ...owners.rows,
+      ...staff.rows
+    ];
+
+    res.status(200).json(combined);
+  } catch (err) {
+    console.error("❌ Error fetching all accounts:", err);
+    res.status(500).json({ error: "Server error fetching all accounts" });
+  }
+});
 /* ================================================================
  💧 OWNER SECTION
 ================================================================ */
@@ -240,59 +381,147 @@ router.put("/owner/:id", async (req, res) => {
  👷‍♂️ STAFF SECTION
 ================================================================ */
 
-// ✅ CREATE STAFF ACCOUNT
+// ✅ CREATE STAFF ACCOUNT (with lastname-based username + phone validation)
 router.post("/staff", async (req, res) => {
   try {
-    const { station_id, first_name, last_name, gender, phone_number, type, password } = req.body;
-    if (!station_id || !first_name || !last_name || !gender || !phone_number || !type || !password)
+    const {
+      station_id,
+      first_name,
+      last_name,
+      gender,
+      phone_number,
+      type,
+      password,
+    } = req.body;
+
+    // 🧠 Validate required fields
+    if (
+      !station_id ||
+      !first_name ||
+      !last_name ||
+      !gender ||
+      !phone_number ||
+      !type ||
+      !password
+    )
       return res.status(400).json({ error: "Missing required fields" });
 
+    // 📱 Validate phone number format (must start with 09 and be 11 digits)
+    const phoneRegex = /^09\d{9}$/;
+    if (!phoneRegex.test(phone_number))
+      return res
+        .status(400)
+        .json({ error: "Invalid phone number. Must start with 09 and be 11 digits." });
+
+    // ⚙️ Validate staff type
     if (!["Onsite", "Delivery"].includes(type))
       return res.status(400).json({ error: "Invalid staff type" });
 
-    const check = await pool.query("SELECT * FROM staff WHERE phone_number = $1", [phone_number]);
-    if (check.rows.length > 0) return res.status(400).json({ error: "Phone number already exists" });
+    // 🔍 Check for duplicate phone number
+    const existingPhone = await pool.query(
+      "SELECT * FROM staff WHERE phone_number = $1",
+      [phone_number]
+    );
+    if (existingPhone.rows.length > 0)
+      return res.status(400).json({ error: "Phone number already exists." });
 
-    const latest = await pool.query("SELECT username FROM staff ORDER BY staff_id DESC LIMIT 1");
-    let next = 1;
+    // 🔢 Generate next username suffix
+    const latest = await pool.query(`
+      SELECT username FROM staff
+      WHERE username ~ '[0-9]+$'
+      ORDER BY CAST(REGEXP_REPLACE(username, '\\D', '', 'g') AS INTEGER) DESC
+      LIMIT 1
+    `);
+
+    let nextNumber = 1;
     if (latest.rows.length > 0) {
-      const match = latest.rows[0].username.match(/(\\d+)$/);
-      if (match) next = parseInt(match[1]) + 1;
+      const match = latest.rows[0].username.match(/(\d+)$/);
+      if (match) nextNumber = parseInt(match[1]) + 1;
     }
 
-    const formatted = next.toString().padStart(6, "0");
-    const username = `${type.toLowerCase()}${formatted}`;
+    const formatted = nextNumber.toString().padStart(6, "0");
+
+    // 🧑‍💼 Use last name prefix in lowercase for username
+    const username = `${last_name.toLowerCase()}${formatted}`;
     const hashed = await bcrypt.hash(password, 10);
 
-    await pool.query(
-      `INSERT INTO staff (station_id, first_name, last_name, gender, phone_number, type, username, password, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Active')`,
+    // 🗄️ Insert new staff record
+    const result = await pool.query(
+      `INSERT INTO staff 
+        (station_id, first_name, last_name, gender, phone_number, type, username, password, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Active')
+       RETURNING staff_id, first_name, last_name, username, type, status`,
       [station_id, first_name, last_name, gender, phone_number, type, username, hashed]
     );
 
-    res.status(201).json({ success: true, message: "✅ Staff created", username });
+    // 📄 Return generated credentials
+    res.status(201).json({
+      success: true,
+      message: "✅ Staff account created successfully.",
+      username: username,
+      password: password, // Return plain for display (only once)
+      staff: result.rows[0],
+    });
   } catch (err) {
     console.error("❌ Error creating staff:", err);
-    res.status(500).json({ error: "Server error creating staff" });
+    if (err.code === "23505") {
+      res.status(400).json({ error: "Duplicate username or phone number detected." });
+    } else {
+      res.status(500).json({ error: "Server error creating staff" });
+    }
   }
 });
 
-// ✅ GET STAFF PROFILE
+// ✅ GET STAFF PROFILE (Onsite / Delivery)
 router.get("/staff/:id", async (req, res) => {
   try {
     const { id } = req.params;
+
+    // 🧩 Properly join with the station table for full info
     const result = await pool.query(
-      `SELECT st.*, s.station_name 
-       FROM staff st 
-       LEFT JOIN water_refilling_stations s ON st.station_id = s.station_id 
-       WHERE st.staff_id = $1`,
+      `
+      SELECT 
+        st.staff_id,
+        st.first_name,
+        st.last_name,
+        st.gender,
+        st.phone_number,
+        st.username,
+        st.type,
+        st.status,
+        st.station_id,
+        s.station_name
+      FROM staff st
+      LEFT JOIN water_refilling_stations s 
+        ON st.station_id = s.station_id
+      WHERE st.staff_id = $1
+      LIMIT 1
+      `,
       [id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: "Staff not found" });
-    res.json(result.rows[0]);
+
+    // 🧠 Handle not found
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: "Staff not found" });
+
+    // ✅ Return a clean structured profile
+    res.status(200).json({
+      staff_id: result.rows[0].staff_id,
+      first_name: result.rows[0].first_name,
+      last_name: result.rows[0].last_name,
+      gender: result.rows[0].gender,
+      phone_number: result.rows[0].phone_number,
+      username: result.rows[0].username,
+      type: result.rows[0].type,
+      status: result.rows[0].status,
+      station_id: result.rows[0].station_id,
+      station_name: result.rows[0].station_name || "Unknown Station",
+    });
   } catch (err) {
-    console.error("❌ Error fetching staff:", err);
-    res.status(500).json({ error: "Server error fetching staff" });
+    console.error("❌ Error fetching staff profile:", err);
+    res
+      .status(500)
+      .json({ error: "Server error while fetching staff profile" });
   }
 });
 
@@ -376,7 +605,7 @@ router.put("/staff/status/:id", async (req, res) => {
     const { id } = req.params;
 
     // Check if staff exists
-    const check = await pool.query("SELECT status FROM staff WHERE staff_id = $1", [id]);
+    const check = await pool.query("SELECT status FROM staff WHERE staff_id = $1", [id]);   
     if (check.rows.length === 0)
       return res.status(404).json({ success: false, error: "Staff not found" });
 

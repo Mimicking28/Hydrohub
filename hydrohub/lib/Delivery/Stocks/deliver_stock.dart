@@ -23,8 +23,8 @@ class _DeliveryStockState extends State<DeliveryStock> {
   int amount = 0;
 
   List<dynamic> products = [];
-  List<String> waterTypes = []; // 20L types
-  Map<String, int> productMap = {}; // type → product_id
+  List<String> waterTypes = [];
+  Map<String, int> productMap = {};
   bool isLoading = true;
 
   @override
@@ -33,37 +33,44 @@ class _DeliveryStockState extends State<DeliveryStock> {
     fetchProductsForStation();
   }
 
-  // ✅ Fetch unique 20-liter products from this station
+  // ✅ Fetch only active 20L delivery products
   Future<void> fetchProductsForStation() async {
     final String apiUrl =
-        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}&type=delivery";
 
     try {
       final response = await http.get(Uri.parse(apiUrl));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
 
-        // Keep only 20L products
         final filtered = data.where((p) {
+          final type = (p["type"] ?? "").toString().toLowerCase().trim();
           final size = (p["size_category"] ?? "").toString().toLowerCase();
-          return size.contains("20") && size.contains("liter");
+          final archived = p["is_archived"];
+          final bool isActive = (archived == false ||
+              archived == 0 ||
+              archived == null ||
+              archived.toString().toLowerCase() == "false");
+
+          return type == "delivery" &&
+              size.contains("20") &&
+              size.contains("liter") &&
+              isActive;
         }).toList();
 
-        // Unique names
-        final Map<String, int> uniqueProducts = {};
+        final Map<String, int> nameToId = {};
         for (var p in filtered) {
-          final name = (p["name"] ?? "").toString();
-          if (!uniqueProducts.containsKey(name)) {
-            uniqueProducts[name] = p["id"];
-          }
+          nameToId[p["name"]] = p["id"];
         }
 
         setState(() {
           products = filtered;
-          productMap = uniqueProducts;
-          waterTypes = uniqueProducts.keys.toList();
+          productMap = nameToId;
+          waterTypes = nameToId.keys.toList();
           isLoading = false;
         });
+
+        print("✅ Active 20L delivery products loaded: ${products.length}");
       } else {
         throw Exception("Failed to fetch products");
       }
@@ -75,28 +82,32 @@ class _DeliveryStockState extends State<DeliveryStock> {
     }
   }
 
-  // ✅ Fetch available stock count from backend
+  // ✅ Get available stock from backend
   Future<int> fetchAvailableStock(int productId) async {
     const String apiUrl = "http://10.0.2.2:3000/api/stocks/available";
 
-    final response = await http.post(
-      Uri.parse(apiUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        "product_id": productId,
-        "station_id": widget.stationId,
-      }),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "product_id": productId,
+          "station_id": widget.stationId,
+        }),
+      );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data["available"] ?? 0;
-    } else {
-      throw Exception("❌ Failed to fetch available stock: ${response.body}");
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data["available"] ?? 0;
+      } else {
+        throw Exception("Failed: ${response.body}");
+      }
+    } catch (e) {
+      throw Exception("⚠️ Error: $e");
     }
   }
 
-  // ✅ Save delivery stock record
+  // ✅ Save delivered stock
   Future<void> saveDeliveredStock({
     required int productId,
     required int amount,
@@ -120,7 +131,7 @@ class _DeliveryStockState extends State<DeliveryStock> {
 
       if (response.statusCode == 201) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ Stock delivered successfully")),
+          const SnackBar(content: Text("✅ Delivery recorded successfully")),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -189,14 +200,14 @@ class _DeliveryStockState extends State<DeliveryStock> {
         date: isoUtc,
       );
 
-      // ✅ Success dialog
       showDialog(
         context: context,
         builder: (context) {
           return AlertDialog(
             backgroundColor: const Color(0xFF1B263B),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text("🚚 Stock Delivered", style: TextStyle(color: Colors.white)),
+            title:
+                const Text("🚚 Stock Delivered", style: TextStyle(color: Colors.white)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,10 +288,10 @@ class _DeliveryStockState extends State<DeliveryStock> {
 
                     const SizedBox(height: 40),
 
-                    // 🔹 Dropdown for 20L water types
+                    // 🔹 Water Type Dropdown
                     if (waterTypes.isEmpty)
                       const Center(
-                        child: Text("No 20-Liter products available",
+                        child: Text("No active 20L delivery products available",
                             style: TextStyle(color: Colors.white70)),
                       )
                     else
@@ -301,8 +312,7 @@ class _DeliveryStockState extends State<DeliveryStock> {
                           items: waterTypes.map((type) {
                             return DropdownMenuItem(
                               value: type,
-                              child:
-                                  Text(type, style: const TextStyle(color: Colors.white)),
+                              child: Text(type, style: const TextStyle(color: Colors.white)),
                             );
                           }).toList(),
                           onChanged: (value) {
@@ -313,11 +323,13 @@ class _DeliveryStockState extends State<DeliveryStock> {
 
                     const SizedBox(height: 30),
 
+                    // 🔹 Fixed size display
                     const Text("Size: 20 Liters",
                         style: TextStyle(color: Colors.white70, fontSize: 16)),
 
                     const SizedBox(height: 30),
 
+                    // 🔹 Quantity counter
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -328,7 +340,6 @@ class _DeliveryStockState extends State<DeliveryStock> {
                             fontWeight: FontWeight.w500),
                       ),
                     ),
-
                     const SizedBox(height: 8),
 
                     Row(
@@ -372,6 +383,7 @@ class _DeliveryStockState extends State<DeliveryStock> {
 
                     const SizedBox(height: 30),
 
+                    // 🔹 Confirm + Cancel buttons
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [

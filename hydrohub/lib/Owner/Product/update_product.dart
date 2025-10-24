@@ -23,6 +23,7 @@ class _UpdateProductState extends State<UpdateProduct> {
 
   final List<String> types = ["Delivery", "Onsite"];
   final List<String> onsiteSizes = ["10 liters", "20 liters"];
+  final List<String> productNames = ["Mineral", "Purified", "Alkaline", "Distilled"];
 
   File? _image;
   final ImagePicker _picker = ImagePicker();
@@ -36,7 +37,7 @@ class _UpdateProductState extends State<UpdateProduct> {
   // ✅ Fetch only products for this station
   Future<void> fetchProducts() async {
     final String apiUrl =
-        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/products/owner/${widget.stationId}";
     try {
       final response = await http.get(Uri.parse(apiUrl));
       if (response.statusCode == 200) {
@@ -86,7 +87,7 @@ class _UpdateProductState extends State<UpdateProduct> {
   // ✅ Update request
   Future<void> updateProduct(int id, Map<String, String> updatedData,
       {File? image}) async {
-    final String apiUrl = "http://10.0.2.2:3000/api/products/$id";
+    final String apiUrl = "http://10.0.2.2:3000/api/products/owner/$id";
     try {
       var request = http.MultipartRequest('PUT', Uri.parse(apiUrl));
       request.fields.addAll(updatedData);
@@ -138,14 +139,13 @@ class _UpdateProductState extends State<UpdateProduct> {
 
   // ✅ Dialog for editing product
   void showUpdateDialog(Map<String, dynamic> product) {
-    final TextEditingController nameController =
-        TextEditingController(text: product["name"] ?? "");
     final TextEditingController priceController =
         TextEditingController(text: product["price"]?.toString() ?? "");
 
+    String selectedProduct = product["name"] ?? "Mineral";
     String selectedType = product["type"] ?? "Delivery";
-    String selectedSize =
-        product["size_category"] ?? (selectedType == "Delivery" ? "20 liters" : "10 liters");
+    String selectedSize = product["size_category"] ??
+        (selectedType == "Delivery" ? "20 liters" : "10 liters");
     File? newImage = _image;
 
     showDialog(
@@ -163,12 +163,25 @@ class _UpdateProductState extends State<UpdateProduct> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(
-                    controller: nameController,
-                    style: const TextStyle(color: Colors.white),
+                  // 🧃 Product Name Dropdown
+                  DropdownButtonFormField<String>(
+                    value: selectedProduct,
+                    dropdownColor: const Color(0xFF1B263B),
                     decoration: _inputDecoration("Product Name"),
+                    items: productNames
+                        .map((name) => DropdownMenuItem(
+                              value: name,
+                              child: Text(name,
+                                  style: const TextStyle(color: Colors.white)),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setDialogState(() => selectedProduct = value!);
+                    },
                   ),
                   const SizedBox(height: 10),
+
+                  // 💰 Price Field
                   TextField(
                     controller: priceController,
                     keyboardType: TextInputType.number,
@@ -176,6 +189,8 @@ class _UpdateProductState extends State<UpdateProduct> {
                     decoration: _inputDecoration("Price (₱)"),
                   ),
                   const SizedBox(height: 10),
+
+                  // 🚚 Type of Service
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: types.map((type) {
@@ -189,20 +204,20 @@ class _UpdateProductState extends State<UpdateProduct> {
                           onSelected: (_) {
                             setDialogState(() {
                               selectedType = type;
-                              selectedSize = type == "Delivery"
-                                  ? "20 liters"
-                                  : onsiteSizes.first;
+                              selectedSize =
+                                  type == "Delivery" ? "20 liters" : onsiteSizes.first;
                             });
                           },
                           labelStyle: TextStyle(
-                              color:
-                                  isSelected ? Colors.white : Colors.white70),
+                              color: isSelected ? Colors.white : Colors.white70),
                           backgroundColor: const Color(0xFF1B263B),
                         ),
                       );
                     }).toList(),
                   ),
                   const SizedBox(height: 10),
+
+                  // 🧪 Size options (for Onsite)
                   if (selectedType == "Onsite")
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -215,18 +230,17 @@ class _UpdateProductState extends State<UpdateProduct> {
                             selected: isSelected,
                             showCheckmark: false,
                             selectedColor: Colors.green,
-                            onSelected: (_) {
-                              setDialogState(() => selectedSize = size);
-                            },
+                            onSelected: (_) => setDialogState(() => selectedSize = size),
                             labelStyle: TextStyle(
-                                color:
-                                    isSelected ? Colors.white : Colors.white70),
+                                color: isSelected ? Colors.white : Colors.white70),
                             backgroundColor: const Color(0xFF2C3E50),
                           ),
                         );
                       }).toList(),
                     ),
                   const SizedBox(height: 10),
+
+                  // 🖼️ Image for delivery
                   if (selectedType == "Delivery")
                     GestureDetector(
                       onTap: () async {
@@ -258,20 +272,17 @@ class _UpdateProductState extends State<UpdateProduct> {
               ),
               TextButton(
                 onPressed: () {
-                  String name = nameController.text.trim();
                   String price = priceController.text.trim();
 
-                  if (name.isEmpty ||
-                      price.isEmpty ||
-                      double.tryParse(price) == null) {
-                    _showPopupMessage("⚠️ Please fill in all fields correctly.");
+                  if (price.isEmpty || double.tryParse(price) == null) {
+                    _showPopupMessage("⚠️ Please enter a valid price.");
                     return;
                   }
 
                   bool duplicate = allProducts.any((p) =>
                       p["id"] != product["id"] &&
                       p["name"].toString().toLowerCase() ==
-                          name.toLowerCase() &&
+                          selectedProduct.toLowerCase() &&
                       p["type"].toString().toLowerCase() ==
                           selectedType.toLowerCase() &&
                       p["size_category"].toString().toLowerCase() ==
@@ -289,7 +300,7 @@ class _UpdateProductState extends State<UpdateProduct> {
                   }
 
                   final updatedData = {
-                    "name": name,
+                    "name": selectedProduct,
                     "price": price,
                     "type": selectedType,
                     "size_category": selectedSize,

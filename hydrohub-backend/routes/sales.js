@@ -5,7 +5,9 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// 📸 Configure file upload
+// =======================================================
+// 📸 File Upload Config
+// =======================================================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/"),
   filename: (req, file, cb) =>
@@ -13,9 +15,20 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-/* =========================================================
-   ✅ POST /api/sales — Create new sale (with optional proof)
-   ========================================================= */
+// =======================================================
+// 🧩 Helper: Get station_id by staff_id
+// =======================================================
+async function getStationIdByStaff(staff_id) {
+  const result = await pool.query(
+    "SELECT station_id FROM staff WHERE staff_id = $1",
+    [staff_id]
+  );
+  return result.rows.length > 0 ? result.rows[0].station_id : null;
+}
+
+// =======================================================
+// 🧾 UNIVERSAL: Add Sale (E-wallet / Cash allowed)
+// =======================================================
 router.post("/", upload.single("proof"), async (req, res) => {
   try {
     const {
@@ -31,7 +44,6 @@ router.post("/", upload.single("proof"), async (req, res) => {
 
     const proof = req.file ? req.file.filename : null;
 
-    // Validate required fields
     if (
       !product_name ||
       !size ||
@@ -45,51 +57,34 @@ router.post("/", upload.single("proof"), async (req, res) => {
       return res.status(400).json({ error: "⚠️ All fields are required." });
     }
 
-    // Get station_id from staff_id
-    const staffQuery = await pool.query(
-      `SELECT station_id FROM staff WHERE staff_id = $1 LIMIT 1`,
-      [staff_id]
-    );
-    if (staffQuery.rowCount === 0)
-      return res.status(404).json({ error: "Staff not found." });
+    const station_id = await getStationIdByStaff(staff_id);
+    if (!station_id)
+      return res.status(404).json({ error: "Staff not found or invalid." });
 
-    const station_id = staffQuery.rows[0].station_id;
-
-    // Get product_id from product + station
+    // Find product_id in this user's station
     const productQuery = await pool.query(
       `SELECT id FROM products 
-       WHERE LOWER(name) = LOWER($1)
-       AND LOWER(size_category) = LOWER($2)
-       AND station_id = $3
+       WHERE LOWER(name)=LOWER($1)
+       AND LOWER(size_category)=LOWER($2)
+       AND station_id=$3
        LIMIT 1`,
       [product_name, size, station_id]
     );
-
-    if (productQuery.rowCount === 0) {
-      return res.status(404).json({
-        error: `Product not found for ${product_name} (${size}) at station ${station_id}.`,
-      });
-    }
+    if (productQuery.rowCount === 0)
+      return res
+        .status(404)
+        .json({ error: `Product not found for this station.` });
 
     const product_id = productQuery.rows[0].id;
 
-    // Insert sale
     await pool.query(
       `INSERT INTO sales 
         (product_id, quantity, total, date, payment_method, sale_type, proof, staff_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        product_id,
-        quantity,
-        total,
-        date,
-        payment_method,
-        sale_type,
-        proof,
-        staff_id,
-      ]
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [product_id, quantity, total, date, payment_method, sale_type, proof, staff_id]
     );
 
+    console.log(`✅ Sale created by staff ${staff_id} in station ${station_id}`);
     res.status(201).json({ message: "✅ Sale added successfully" });
   } catch (err) {
     console.error("❌ Error saving sale:", err);
@@ -97,51 +92,161 @@ router.post("/", upload.single("proof"), async (req, res) => {
   }
 });
 
-/* =========================================================
-   ✅ GET /api/sales — Fetch all sales (with station info)
-   ========================================================= */
+// =======================================================
+// 🔍 UNIVERSAL: Fetch Sales (Supports ?station_id=&type=)
+// =======================================================
 router.get("/", async (req, res) => {
   try {
-    const { type, station_id } = req.query;
-    const params = [];
+    const { station_id, type } = req.query;
+
+    if (!station_id) {
+      return res.status(400).json({ error: "station_id is required" });
+    }
 
     let query = `
       SELECT 
-        s.id AS id, 
-        s.quantity, s.total, s.date, s.payment_method, s.sale_type, s.proof,
-        p.name AS water_type, p.size_category AS size, p.price,
-        sf.first_name, sf.last_name,
-        w.station_name
+        s.*, 
+        p.name AS water_type, 
+        p.size_category AS size, 
+        p.price,
+        sf.first_name, sf.last_name
       FROM sales s
       JOIN products p ON s.product_id = p.id
       JOIN staff sf ON s.staff_id = sf.staff_id
-      JOIN water_refilling_stations w ON sf.station_id = w.station_id
+      WHERE sf.station_id = $1
     `;
+    const values = [station_id];
 
-    if (type && station_id) {
-      query += " WHERE s.sale_type = $1 AND w.station_id = $2";
-      params.push(type, station_id);
-    } else if (type) {
-      query += " WHERE s.sale_type = $1";
-      params.push(type);
-    } else if (station_id) {
-      query += " WHERE w.station_id = $1";
-      params.push(station_id);
+    // Optional filter for onsite/delivery
+    if (type) {
+      query += ` AND s.sale_type = $2`;
+      values.push(type);
     }
 
-    query += " ORDER BY s.date DESC";
+    query += ` ORDER BY s.date DESC`;
 
-    const result = await pool.query(query, params);
+    const result = await pool.query(query, values);
     res.json(result.rows);
   } catch (err) {
-    console.error("❌ Error fetching sales:", err);
+    console.error("❌ Error fetching sales:", err.message);
     res.status(500).json({ error: "Server error while fetching sales" });
   }
 });
 
-/* =========================================================
-   ✅ PUT /api/sales/:id — Update sale (with optional proof)
-   ========================================================= */
+// =======================================================
+// 👑 ADMIN — Can View All Sales
+// =======================================================
+router.get("/admin", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT s.*, p.name AS water_type, p.size_category AS size, p.price,
+             sf.first_name, sf.last_name, ws.station_name
+      FROM sales s
+      JOIN products p ON s.product_id = p.id
+      JOIN staff sf ON s.staff_id = sf.staff_id
+      JOIN water_refilling_stations ws ON sf.station_id = ws.station_id
+      ORDER BY s.date DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ Admin fetch error:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// =======================================================
+// 🧑‍💼 OWNER — View Sales from Their Station
+// =======================================================
+router.get("/owner/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params;
+
+    const result = await pool.query(
+      `
+      SELECT s.*, p.name AS product_name, p.size_category, p.price,
+             sf.first_name, sf.last_name
+      FROM sales s
+      JOIN products p ON s.product_id = p.id
+      JOIN staff sf ON s.staff_id = sf.staff_id
+      WHERE sf.station_id = $1
+      ORDER BY s.date DESC
+    `,
+      [station_id]
+    );
+
+    console.log(`✅ Owner station ${station_id} fetched ${result.rows.length} sales`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ Owner fetch error:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// =======================================================
+// 🧍‍♂️ ONSITE STAFF — View Their Station's Onsite Sales
+// =======================================================
+router.get("/onsite/:staff_id", async (req, res) => {
+  try {
+    const { staff_id } = req.params;
+    const station_id = await getStationIdByStaff(staff_id);
+    if (!station_id)
+      return res.status(400).json({ error: "Invalid staff_id" });
+
+    const result = await pool.query(
+      `
+      SELECT s.*, p.name AS product_name, p.size_category, p.price,
+             sf.first_name, sf.last_name
+      FROM sales s
+      JOIN products p ON s.product_id = p.id
+      JOIN staff sf ON s.staff_id = sf.staff_id
+      WHERE sf.station_id = $1 AND s.sale_type = 'onsite'
+      ORDER BY s.date DESC
+    `,
+      [station_id]
+    );
+
+    console.log(`✅ Onsite staff ${staff_id} fetched ${result.rows.length} onsite sales`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ Onsite fetch error:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// =======================================================
+// 🚚 DELIVERY STAFF — View Their Station's Delivery Sales
+// =======================================================
+router.get("/delivery/:staff_id", async (req, res) => {
+  try {
+    const { staff_id } = req.params;
+    const station_id = await getStationIdByStaff(staff_id);
+    if (!station_id)
+      return res.status(400).json({ error: "Invalid staff_id" });
+
+    const result = await pool.query(
+      `
+      SELECT s.*, p.name AS product_name, p.size_category, p.price,
+             sf.first_name, sf.last_name
+      FROM sales s
+      JOIN products p ON s.product_id = p.id
+      JOIN staff sf ON s.staff_id = sf.staff_id
+      WHERE sf.station_id = $1 AND s.sale_type = 'delivery'
+      ORDER BY s.date DESC
+    `,
+      [station_id]
+    );
+
+    console.log(`✅ Delivery staff ${staff_id} fetched ${result.rows.length} delivery sales`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ Delivery fetch error:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// =======================================================
+// ✏️ UPDATE SALE — For Any Role in Their Station
+// =======================================================
 router.put("/:id", upload.single("proof"), async (req, res) => {
   try {
     const { id } = req.params;
@@ -153,33 +258,33 @@ router.put("/:id", upload.single("proof"), async (req, res) => {
       date,
       payment_method,
       sale_type,
-      station_id,
       staff_id,
       remove_proof,
     } = req.body;
 
-    const proof = req.file ? req.file.filename : null;
+    const station_id = await getStationIdByStaff(staff_id);
+    if (!station_id)
+      return res.status(400).json({ error: "Invalid staff_id" });
 
-    // Validate product
     const productQuery = await pool.query(
       `SELECT id FROM products 
-       WHERE LOWER(name) = LOWER($1)
-       AND LOWER(size_category) = LOWER($2)
-       AND station_id = $3
+       WHERE LOWER(name)=LOWER($1)
+       AND LOWER(size_category)=LOWER($2)
+       AND station_id=$3
        LIMIT 1`,
       [water_type, size, station_id]
     );
-
     if (productQuery.rowCount === 0)
       return res.status(404).json({ error: "Product not found for update." });
 
     const product_id = productQuery.rows[0].id;
+    const proof = req.file ? req.file.filename : null;
 
-    // Build dynamic query
+    // Base update query
     let query = `
       UPDATE sales
-      SET product_id = $1, quantity = $2, total = $3, date = $4,
-          payment_method = $5, sale_type = $6, staff_id = $7
+      SET product_id=$1, quantity=$2, total=$3, date=$4,
+          payment_method=$5, sale_type=$6, staff_id=$7
     `;
     const values = [
       product_id,
@@ -191,19 +296,20 @@ router.put("/:id", upload.single("proof"), async (req, res) => {
       staff_id,
     ];
 
+    // Handle proof logic
     if (proof) {
-      query += `, proof = $8 WHERE id = $9 RETURNING *`;
+      query += `, proof=$8 WHERE id=$9 RETURNING *`;
       values.push(proof, id);
     } else if (remove_proof === "true" || payment_method === "Cash") {
-      const oldProof = await pool.query(`SELECT proof FROM sales WHERE id = $1`, [id]);
+      const oldProof = await pool.query(`SELECT proof FROM sales WHERE id=$1`, [id]);
       if (oldProof.rowCount > 0 && oldProof.rows[0].proof) {
         const oldFile = path.join(__dirname, "../uploads", oldProof.rows[0].proof);
         if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
       }
-      query += `, proof = NULL WHERE id = $8 RETURNING *`;
+      query += `, proof=NULL WHERE id=$8 RETURNING *`;
       values.push(id);
     } else {
-      query += ` WHERE id = $8 RETURNING *`;
+      query += ` WHERE id=$8 RETURNING *`;
       values.push(id);
     }
 

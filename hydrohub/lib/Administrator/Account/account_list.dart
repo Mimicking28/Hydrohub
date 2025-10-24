@@ -279,6 +279,7 @@ class _AccountListState extends State<AccountList> {
                                     onPressed: () => _showDetailsDialog(acc),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.blueAccent,
+                                      foregroundColor: Color.fromARGB(255, 255, 255, 255),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(8),
                                       ),

@@ -20,9 +20,9 @@ class _SalesLogsState extends State<SalesLogs> {
     fetchSales();
   }
 
-  // ✅ Fetch all sales (delivery + onsite)
+  // ✅ Fetch all sales (admin view)
   Future<void> fetchSales() async {
-    const String apiUrl = "http://10.0.2.2:3000/api/sales";
+    const String apiUrl = "http://10.0.2.2:3000/api/sales/admin";
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
@@ -31,26 +31,21 @@ class _SalesLogsState extends State<SalesLogs> {
           sales = json.decode(response.body);
           isLoading = false;
         });
-
-        // Debug print all sales data
-        for (var sale in sales) {
-          debugPrint("Sale: $sale");
-        }
       } else {
         setState(() => isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("❌ Failed to fetch sales logs: ${response.statusCode}")),
+          SnackBar(content: Text("❌ Server error: ${response.statusCode}")),
         );
       }
     } catch (e) {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Error fetching sales: $e")),
+        SnackBar(content: Text("❌ Failed to fetch sales logs: $e")),
       );
     }
   }
 
-  // ✅ Format UTC to Philippine time
+  // ✅ Convert UTC to Philippine time
   String formatToPHTime(String utcString) {
     try {
       final utcTime = DateTime.parse(utcString).toUtc();
@@ -61,7 +56,18 @@ class _SalesLogsState extends State<SalesLogs> {
     }
   }
 
-  // ✅ Show payment proof dialog
+  // 🎨 Color tag for payment method
+  Color getPaymentColor(String method) {
+    if (method.toLowerCase() == "cash") {
+      return Colors.greenAccent;
+    } else if (method.toLowerCase() == "e-wallet") {
+      return Colors.blueAccent;
+    } else {
+      return Colors.grey;
+    }
+  }
+
+  // 🧾 Show payment proof
   void showPhotoDialog(String imageUrl) {
     showDialog(
       context: context,
@@ -75,11 +81,14 @@ class _SalesLogsState extends State<SalesLogs> {
               child: Image.network(
                 imageUrl,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.broken_image, size: 80, color: Colors.white),
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.broken_image,
+                  color: Colors.white,
+                  size: 80,
+                ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
@@ -102,88 +111,121 @@ class _SalesLogsState extends State<SalesLogs> {
         backgroundColor: const Color(0xFF1B263B),
         foregroundColor: Colors.white,
         title: const Text(
-          "All Sales Logs",
+          "Sales Logs (All Stations)",
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Colors.lightBlueAccent))
           : sales.isEmpty
               ? const Center(
                   child: Text(
-                    "No sales available",
+                    "No sales records available",
                     style: TextStyle(color: Colors.white70, fontSize: 18),
                   ),
                 )
               : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 12),
                   itemCount: sales.length,
                   itemBuilder: (context, index) {
                     final sale = sales[index];
-                    final isEwallet =
-                        sale["payment_method"].toString().toLowerCase() == "e-wallet";
+                    final payment = sale["payment_method"] ?? "Unknown";
+                    final tagColor = getPaymentColor(payment);
 
-                    // ✅ Full URL for proof image
-                    final proofUrl = sale["proof"] != null &&
-                            sale["proof"].toString().isNotEmpty
+                    // Proof URL
+                    final proofUrl = (sale["proof"] != null && sale["proof"].toString().isNotEmpty)
                         ? "http://10.0.2.2:3000/uploads/${sale["proof"]}"
                         : null;
 
                     return Card(
                       color: const Color(0xFF1B263B),
                       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 3,
                       child: Padding(
-                        padding: const EdgeInsets.all(12.0),
+                        padding: const EdgeInsets.all(14.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // 💧 Water Type
-                            Text(
-                              "💧 Water: ${sale["water_type"] ?? "Unknown"} (${sale["size"] ?? "N/A"})",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            // 🔹 Header (Water + Tag)
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    "💧 ${sale["water_type"] ?? "Unknown"} (${sale["size"] ?? "N/A"})",
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: tagColor.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    payment.toUpperCase(),
+                                    style: TextStyle(
+                                      color: tagColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
 
-                            // 📋 Details
+                            // 📋 Sale Info
                             Text(
-                              "🏪 Station: ${sale["station_name"] ?? "N/A"}\n"
-                              "👷 Recorded by: ${sale["first_name"] ?? ""} ${sale["last_name"] ?? ""}\n"
-                              "📦 Quantity: ${sale["quantity"]}\n"
-                              "💰 Total: ₱${sale["total"]}\n"
-                              "💳 Payment: ${sale["payment_method"]}\n"
-                              "📋 Type: ${sale["sale_type"]}\n"
-                              "🕒 Date: ${formatToPHTime(sale["date"])}",
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 16,
-                                height: 1.5,
-                              ),
+                              "🏪 Station: ${sale["station_name"] ?? "N/A"}",
+                              style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
                             ),
-                            const SizedBox(height: 8),
+                            Text(
+                              "🧍 Staff: ${(sale["first_name"] ?? "Unknown")} ${(sale["last_name"] ?? "")}",
+                              style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
+                            ),
+                            Text(
+                              "📦 Quantity: ${sale["quantity"] ?? "0"}",
+                              style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
+                            ),
+                            Text(
+                              "💰 Total: ₱${sale["total"] ?? "0"}",
+                              style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
+                            ),
+                            Text(
+                              "🛒 Type: ${sale["sale_type"] ?? "N/A"}",
+                              style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
+                            ),
+                            Text(
+                              "🕒 Date: ${formatToPHTime(sale["date"] ?? "")}",
+                              style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
+                            ),
 
-                            // 🧾 Proof Button
-                            if (isEwallet && proofUrl != null)
+                            const SizedBox(height: 10),
+
+                            // 📷 Payment Proof (for e-wallet only)
+                            if (payment.toLowerCase() == "e-wallet" && proofUrl != null)
                               Align(
                                 alignment: Alignment.center,
                                 child: TextButton(
                                   style: TextButton.styleFrom(
                                     backgroundColor: Colors.blue,
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 18, vertical: 10),
-                                    textStyle: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
+                                      borderRadius: BorderRadius.circular(10),
                                     ),
                                   ),
                                   onPressed: () => showPhotoDialog(proofUrl),
-                                  child: const Text("View Proof"),
+                                  child: const Text(
+                                    "View Proof",
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
                                 ),
                               ),
                           ],

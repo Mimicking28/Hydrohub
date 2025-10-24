@@ -2,20 +2,27 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 
-// ========================
-// ✅ Add new stock record
-// ========================
+/* =========================================================
+   🔧 HELPER: Get station_id of a given staff_id
+========================================================= */
+async function getStationIdByStaff(staff_id) {
+  const result = await pool.query(
+    "SELECT station_id FROM staff WHERE staff_id = $1",
+    [staff_id]
+  );
+  return result.rows.length > 0 ? result.rows[0].station_id : null;
+}
+
+/* =========================================================
+   🧾 UNIVERSAL: Add Stock (auto-secured by staff_id)
+========================================================= */
 router.post("/", async (req, res) => {
   try {
     const { product_id, amount, stock_type, date, reason, staff_id } = req.body;
 
-    const staffResult = await pool.query(
-      "SELECT station_id FROM staff WHERE staff_id = $1",
-      [staff_id]
-    );
-
-    if (staffResult.rows.length === 0)
-      return res.status(400).json({ error: "Invalid staff_id" });
+    const station_id = await getStationIdByStaff(staff_id);
+    if (!station_id)
+      return res.status(400).json({ error: "Invalid or missing staff_id" });
 
     const result = await pool.query(
       `INSERT INTO stocks (product_id, amount, stock_type, date, reason, staff_id)
@@ -24,225 +31,124 @@ router.post("/", async (req, res) => {
       [product_id, amount, stock_type, date, reason || null, staff_id]
     );
 
+    console.log(`✅ Stock added by staff ${staff_id} in station ${station_id}`);
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error("❌ Error inserting stock:", err.message);
+    console.error("❌ Error adding stock:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ========================
-// ✅ Get all stocks (20L only, filtered by station_id if provided)
-// ========================
-router.get("/", async (req, res) => {
+/* =========================================================
+   👑 ADMIN ROUTES — view all stations
+========================================================= */
+router.get("/admin", async (req, res) => {
   try {
-    const { station_id, type } = req.query;
-    const params = [];
-
-    let query = `
-      SELECT 
-        st.id, st.amount, st.stock_type, st.reason, st.date,
-        p.id AS product_id, p.name AS product_name, p.size_category, p.price, p.type AS product_type,
-        sf.staff_id, sf.first_name, sf.last_name, sf.station_id,
-        ws.station_name
-      FROM stocks st
-      JOIN products p ON st.product_id = p.id
-      JOIN staff sf ON st.staff_id = sf.staff_id
-      JOIN water_refilling_stations ws ON sf.station_id = ws.station_id
-      WHERE p.size_category ILIKE '%20%'
-    `;
-
-    // ✅ Optional station filter
-    if (station_id) {
-      query += ` AND sf.station_id = $${params.length + 1}`;
-      params.push(station_id);
-    }
-
-    // ✅ Optional stock type filter
-    if (type) {
-      query += ` AND st.stock_type = ANY($${params.length + 1})`;
-      params.push(type.split(","));
-    }
-
-    query += " ORDER BY st.date DESC";
-
-    const result = await pool.query(query, params);
-    console.log("✅ Stocks fetched:", result.rows.length);
-    res.json(result.rows);
-  } catch (err) {
-    console.error("❌ Error fetching stocks:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// ========================
-// ✅ Get only refilled stocks (20L only)
-// ========================
-router.get("/refilled", async (req, res) => {
-  try {
-    const { station_id } = req.query;
-
-    let query = `
+    const result = await pool.query(`
       SELECT st.*, 
-             p.id AS product_id, p.type AS product_type, 
-             p.size_category, p.name AS product_name,
+             p.name AS product_name, p.size_category, p.type AS product_type,
              sf.first_name, sf.last_name, ws.station_name
       FROM stocks st
       JOIN products p ON st.product_id = p.id
       JOIN staff sf ON st.staff_id = sf.staff_id
       JOIN water_refilling_stations ws ON sf.station_id = ws.station_id
-      WHERE st.stock_type = 'refilled'
-        AND p.size_category ILIKE '%20%'
-    `;
-    const params = [];
-
-    if (station_id) {
-      query += " AND sf.station_id = $1";
-      params.push(station_id);
-    }
-
-    query += " ORDER BY st.date DESC";
-    const result = await pool.query(query, params);
-
-    console.log("✅ Refilled stocks found:", result.rows.length);
+      ORDER BY st.date DESC
+    `);
     res.json(result.rows);
   } catch (err) {
-    console.error("❌ Error fetching refilled stocks:", err.message);
+    console.error("❌ Admin fetch error:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ========================
-// ✅ Get only discarded stocks (20L only)
-// ========================
-router.get("/discarded", async (req, res) => {
+/* =========================================================
+   🧑‍💼 OWNER ROUTES — view only their own station
+========================================================= */
+router.get("/owner/:station_id", async (req, res) => {
   try {
-    const { station_id } = req.query;
+    const { station_id } = req.params;
 
-    let query = `
+    const result = await pool.query(
+      `
       SELECT st.*, 
-             p.id AS product_id, p.type AS product_type, 
-             p.size_category, p.name AS product_name,
+             p.name AS product_name, p.size_category, p.type AS product_type,
              sf.first_name, sf.last_name, ws.station_name
       FROM stocks st
       JOIN products p ON st.product_id = p.id
       JOIN staff sf ON st.staff_id = sf.staff_id
       JOIN water_refilling_stations ws ON sf.station_id = ws.station_id
-      WHERE st.stock_type = 'discarded'
-        AND p.size_category ILIKE '%20%'
-    `;
-    const params = [];
+      WHERE ws.station_id = $1
+      ORDER BY st.date DESC
+    `,
+      [station_id]
+    );
 
-    if (station_id) {
-      query += " AND sf.station_id = $1";
-      params.push(station_id);
-    }
-
-    query += " ORDER BY st.date DESC";
-    const result = await pool.query(query, params);
-
-    console.log("✅ Discarded stocks found:", result.rows.length);
+    console.log(`✅ Owner station ${station_id} fetched ${result.rows.length} stocks`);
     res.json(result.rows);
   } catch (err) {
-    console.error("❌ Error fetching discarded stocks:", err.message);
+    console.error("❌ Owner fetch error:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ========================
-// ✅ Get only delivered stocks (20L only)
-// ========================
-router.get("/delivered", async (req, res) => {
+/* =========================================================
+   🧍‍♂️ ONSITE STAFF — add/view stocks in their station
+========================================================= */
+router.get("/onsite/:staff_id", async (req, res) => {
   try {
-    const { station_id } = req.query;
+    const { staff_id } = req.params;
+    const station_id = await getStationIdByStaff(staff_id);
+    if (!station_id)
+      return res.status(400).json({ error: "Invalid staff_id" });
 
-    let query = `
+    const result = await pool.query(
+      `
       SELECT st.*, 
-             p.id AS product_id, p.type AS product_type, 
-             p.size_category, p.name AS product_name,
-             sf.first_name, sf.last_name, ws.station_name
+             p.name AS product_name, p.size_category, p.type AS product_type,
+             sf.first_name, sf.last_name
       FROM stocks st
       JOIN products p ON st.product_id = p.id
       JOIN staff sf ON st.staff_id = sf.staff_id
-      JOIN water_refilling_stations ws ON sf.station_id = ws.station_id
-      WHERE st.stock_type = 'delivered'
-        AND p.size_category ILIKE '%20%'
-    `;
-    const params = [];
+      WHERE sf.station_id = $1
+      ORDER BY st.date DESC
+    `,
+      [station_id]
+    );
 
-    if (station_id) {
-      query += " AND sf.station_id = $1";
-      params.push(station_id);
-    }
-
-    query += " ORDER BY st.date DESC";
-    const result = await pool.query(query, params);
-
-    console.log("✅ Delivered stocks found:", result.rows.length);
+    console.log(`✅ Onsite staff ${staff_id} fetched ${result.rows.length} stocks`);
     res.json(result.rows);
   } catch (err) {
-    console.error("❌ Error fetching delivered stocks:", err.message);
+    console.error("❌ Onsite fetch error:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ========================
-// ✅ Get only returned stocks (20L only)
-// ========================
-router.get("/returned", async (req, res) => {
-  try {
-    const { station_id } = req.query;
-
-    let query = `
-      SELECT st.*, 
-             p.id AS product_id, p.type AS product_type, 
-             p.size_category, p.name AS product_name,
-             sf.first_name, sf.last_name, ws.station_name
-      FROM stocks st
-      JOIN products p ON st.product_id = p.id
-      JOIN staff sf ON st.staff_id = sf.staff_id
-      JOIN water_refilling_stations ws ON sf.station_id = ws.station_id
-      WHERE st.stock_type = 'returned'
-        AND p.size_category ILIKE '%20%'
-    `;
-    const params = [];
-
-    if (station_id) {
-      query += " AND sf.station_id = $1";
-      params.push(station_id);
-    }
-
-    query += " ORDER BY st.date DESC";
-    const result = await pool.query(query, params);
-
-    console.log("✅ Returned stocks found:", result.rows.length);
-    res.json(result.rows);
-  } catch (err) {
-    console.error("❌ Error fetching returned stocks:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// ========================
-// ✅ Update stock record by ID
-// ========================
+/* =========================================================
+   ✏️ UPDATE STOCK RECORD (used by UpdateRefilled)
+========================================================= */
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { product_id, amount, stock_type, date, reason } = req.body;
+    const { product_id, amount, stock_type, date, staff_id } = req.body;
+
+    if (!product_id || !amount || !stock_type || !date || !staff_id) {
+      return res.status(400).json({ error: "⚠️ All fields are required" });
+    }
+
+    const check = await pool.query("SELECT * FROM stocks WHERE id = $1", [id]);
+    if (check.rowCount === 0) {
+      return res.status(404).json({ error: "❌ Stock record not found" });
+    }
 
     const result = await pool.query(
       `UPDATE stocks
-       SET product_id=$1, amount=$2, stock_type=$3, date=$4, reason=$5
-       WHERE id=$6
+       SET product_id = $1, amount = $2, stock_type = $3, date = $4, staff_id = $5
+       WHERE id = $6
        RETURNING *`,
-      [product_id, amount, stock_type, date, reason || null, id]
+      [product_id, amount, stock_type, date, staff_id, id]
     );
 
-    if (result.rows.length === 0)
-      return res.status(404).json({ error: "Stock not found" });
-
-    console.log(`✅ Stock ${id} updated successfully`);
+    console.log(`✏️ Stock ID ${id} updated by staff ${staff_id}`);
     res.json(result.rows[0]);
   } catch (err) {
     console.error("❌ Error updating stock:", err.message);
@@ -250,25 +156,64 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// ========================
-// ✅ Get available stock for specific product
-// ========================
-router.post("/available", async (req, res) => {
+/* =========================================================
+   🚚 DELIVERY STAFF — view delivered & returned stocks
+========================================================= */
+router.get("/delivery/:staff_id", async (req, res) => {
   try {
-    const { product_id } = req.body;
+    const { staff_id } = req.params;
+    const station_id = await getStationIdByStaff(staff_id);
+    if (!station_id)
+      return res.status(400).json({ error: "Invalid staff_id" });
 
     const result = await pool.query(
-      `SELECT
-         COALESCE(SUM(CASE WHEN stock_type IN ('refilled','returned') THEN amount ELSE 0 END), 0)
-         - COALESCE(SUM(CASE WHEN stock_type IN ('discarded','delivered') THEN amount ELSE 0 END), 0)
-         AS available
-       FROM stocks
-       WHERE product_id = $1`,
-      [product_id]
+      `
+      SELECT st.*, 
+             p.name AS product_name, p.size_category, p.type AS product_type,
+             sf.first_name, sf.last_name
+      FROM stocks st
+      JOIN products p ON st.product_id = p.id
+      JOIN staff sf ON st.staff_id = sf.staff_id
+      WHERE sf.station_id = $1
+        AND st.stock_type IN ('delivered', 'returned')
+      ORDER BY st.date DESC
+    `,
+      [station_id]
     );
 
-    const available = parseInt(result.rows[0].available);
-    console.log(`ℹ️ Product ${product_id} available:`, available);
+    console.log(`✅ Delivery staff ${staff_id} fetched ${result.rows.length} records`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ Delivery fetch error:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =========================================================
+   📊 AVAILABLE STOCKS (user-specific filtering)
+========================================================= */
+router.post("/available", async (req, res) => {
+  try {
+    const { staff_id, product_id } = req.body;
+    const station_id = await getStationIdByStaff(staff_id);
+    if (!station_id)
+      return res.status(400).json({ error: "Invalid staff_id" });
+
+    const result = await pool.query(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN st.stock_type IN ('refilled','returned') THEN amount ELSE 0 END), 0)
+        - COALESCE(SUM(CASE WHEN st.stock_type IN ('discarded','delivered') THEN amount ELSE 0 END), 0)
+        AS available
+      FROM stocks st
+      JOIN staff sf ON st.staff_id = sf.staff_id
+      WHERE st.product_id = $1 AND sf.station_id = $2
+    `,
+      [product_id, station_id]
+    );
+
+    const available = parseInt(result.rows[0].available) || 0;
+    console.log(`📦 Station ${station_id} available stock:`, available);
     res.json({ available: available < 0 ? 0 : available });
   } catch (err) {
     console.error("❌ Error fetching available stock:", err.message);
@@ -276,14 +221,56 @@ router.post("/available", async (req, res) => {
   }
 });
 
-// ========================
-// ✅ Stock summary by product (20L only, grouped per station)
-// ========================
-router.get("/stock_summary", async (req, res) => {
+/* =========================================================
+   💧 GET STOCKS BY TYPE (refilled, discarded, returned, delivered)
+========================================================= */
+router.get("/type/:station_id/:stock_type", async (req, res) => {
   try {
-    const { station_id } = req.query;
+    const { station_id, stock_type } = req.params;
 
-    let query = `
+    const allowedTypes = ["refilled", "discarded", "returned", "delivered"];
+    if (!allowedTypes.includes(stock_type.toLowerCase())) {
+      return res.status(400).json({ error: "❌ Invalid stock type" });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT st.*, 
+             p.name AS product_name, 
+             p.size_category, 
+             p.type AS product_type,
+             sf.first_name, sf.last_name,
+             ws.station_name
+      FROM stocks st
+      JOIN products p ON st.product_id = p.id
+      JOIN staff sf ON st.staff_id = sf.staff_id
+      JOIN water_refilling_stations ws ON sf.station_id = ws.station_id
+      WHERE sf.station_id = $1
+        AND st.stock_type = $2
+      ORDER BY st.date DESC
+      `,
+      [station_id, stock_type]
+    );
+
+    console.log(
+      `📦 ${stock_type.toUpperCase()} stocks fetched for station ${station_id}: ${result.rows.length}`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ Error fetching stocks by type:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =========================================================
+   🧮 STOCK SUMMARY PER STATION (Owner & Admin)
+========================================================= */
+router.get("/summary/:station_id", async (req, res) => {
+  try {
+    const { station_id } = req.params;
+
+    const result = await pool.query(
+      `
       SELECT 
         p.id AS product_id,
         p.name AS product_name,
@@ -295,33 +282,17 @@ router.get("/stock_summary", async (req, res) => {
       FROM stocks st
       JOIN products p ON st.product_id = p.id
       JOIN staff sf ON st.staff_id = sf.staff_id
-      WHERE p.size_category ILIKE '%20%'
-    `;
-
-    const params = [];
-    if (station_id) {
-      query += " AND sf.station_id = $1";
-      params.push(station_id);
-    }
-
-    query += `
+      WHERE sf.station_id = $1
       GROUP BY p.id, p.name, p.type, p.size_category
       ORDER BY p.name ASC
-    `;
+    `,
+      [station_id]
+    );
 
-    const result = await pool.query(query, params);
-
-    const formatted = result.rows.map((r) => ({
-      product_id: r.product_id,
-      name: `${r.product_name} ${r.size_category}`,
-      available: parseInt(r.available),
-      type: r.product_type,
-    }));
-
-    console.log("📊 Stock summary products returned:", formatted.length);
-    res.json(formatted);
+    console.log(`📊 Station ${station_id} summary: ${result.rows.length} products`);
+    res.json(result.rows);
   } catch (err) {
-    console.error("❌ Error fetching product-level stock summary:", err.message);
+    console.error("❌ Stock summary error:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });

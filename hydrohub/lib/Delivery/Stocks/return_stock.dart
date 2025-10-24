@@ -1,3 +1,5 @@
+// ignore_for_file: unused_import
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
@@ -7,12 +9,7 @@ import '../home_page.dart';
 class ReturnStock extends StatefulWidget {
   final int stationId;
   final int staffId;
-
-  const ReturnStock({
-    super.key,
-    required this.stationId,
-    required this.staffId,
-  });
+  const ReturnStock({super.key, required this.stationId, required this.staffId});
 
   @override
   State<ReturnStock> createState() => _ReturnStockState();
@@ -21,70 +18,95 @@ class ReturnStock extends StatefulWidget {
 class _ReturnStockState extends State<ReturnStock> {
   String? selectedType;
   String? selectedReason;
+  String otherReason = "";
   int amount = 0;
 
-  List<dynamic> products = [];
-  List<String> waterTypes = []; // Unique 20L types
-  Map<String, int> productMap = {}; // Maps name → product_id
+  List<String> waterTypes = [];
+  Map<String, int> productMap = {};
   bool isLoading = true;
 
-  final List<String> reasons = [
-    "Damaged",
-    "Not Sold",
+  final List<String> returnReasons = [
     "Customer Return",
-    "Other"
+    "Not Sold",
+    "Damaged",
+    "Others"
   ];
 
   @override
   void initState() {
     super.initState();
-    fetchProductsForStation();
+    fetchDeliveryProducts();
   }
 
-  // ✅ Fetch unique 20-liter products
-  Future<void> fetchProductsForStation() async {
+  // ✅ Fetch active delivery products (all 20L)
+  Future<void> fetchDeliveryProducts() async {
     final String apiUrl =
-        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}&type=delivery";
 
     try {
       final response = await http.get(Uri.parse(apiUrl));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
 
-        // Filter 20-liter products only
+        // Filter only active delivery-type products
         final filtered = data.where((p) {
-          final size = (p["size_category"] ?? "").toString().toLowerCase();
-          return size.contains("20") && size.contains("liter");
+          final type = (p["type"] ?? "").toString().toLowerCase();
+          final archived = p["is_archived"];
+          final bool isActive = (archived == false ||
+              archived == 0 ||
+              archived == null ||
+              archived.toString().toLowerCase() == "false");
+          return type == "delivery" && isActive;
         }).toList();
 
-        // Remove duplicates by name
-        final Map<String, int> uniqueProducts = {};
+        final Map<String, int> nameToId = {};
         for (var p in filtered) {
-          final name = (p["name"] ?? "").toString();
-          if (!uniqueProducts.containsKey(name)) {
-            uniqueProducts[name] = p["id"];
-          }
+          nameToId[p["name"]] = p["id"];
         }
 
         setState(() {
-          products = filtered;
-          productMap = uniqueProducts;
-          waterTypes = uniqueProducts.keys.toList();
+          productMap = nameToId;
+          waterTypes = nameToId.keys.toList();
           isLoading = false;
         });
       } else {
-        throw Exception("Failed to fetch products");
+        throw Exception("Failed to fetch delivery products");
       }
     } catch (e) {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Failed to load products: $e")),
+        SnackBar(content: Text("❌ Error loading products: $e")),
       );
     }
   }
 
-  // ✅ Save returned stock with reason
-  Future<void> saveStockToDatabase({
+  // ✅ Check available stock using delivery products
+  Future<int> fetchAvailableStock(int productId) async {
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks/available";
+
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "product_id": productId,
+          "staff_id": widget.staffId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data["available"] ?? 0;
+      } else {
+        throw Exception("Failed to fetch available stock");
+      }
+    } catch (e) {
+      throw Exception("⚠️ Error fetching stock: $e");
+    }
+  }
+
+  // ✅ Save returned stock record
+  Future<void> saveReturnedStockToDatabase({
     required int productId,
     required int amount,
     required String date,
@@ -108,7 +130,7 @@ class _ReturnStockState extends State<ReturnStock> {
 
       if (response.statusCode == 201) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ Stock returned successfully")),
+          const SnackBar(content: Text("♻️ Stock returned successfully")),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -122,11 +144,14 @@ class _ReturnStockState extends State<ReturnStock> {
     }
   }
 
-  // ✅ Confirm return logic
+  // ✅ Confirm return with validation
   void _confirmReturn() async {
-    if (selectedType == null || amount <= 0 || selectedReason == null) {
+    if (selectedType == null ||
+        amount <= 0 ||
+        selectedReason == null ||
+        (selectedReason == "Others" && otherReason.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ Please fill out all fields")),
+        const SnackBar(content: Text("⚠️ Please complete all fields")),
       );
       return;
     }
@@ -139,43 +164,61 @@ class _ReturnStockState extends State<ReturnStock> {
       return;
     }
 
-    // Use UTC for DB
-    final nowUtc = DateTime.now().toUtc();
-    final isoUtc = nowUtc.toIso8601String();
+    try {
+      final available = await fetchAvailableStock(productId);
 
-    // Convert for display (PH Time)
-    final phTime = nowUtc.add(const Duration(hours: 8));
-    final formattedPHTime = DateFormat('yyyy-MM-dd hh:mm a').format(phTime);
+      if (amount > available) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF1B263B),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text("⚠️ Not Enough Stock",
+                style: TextStyle(color: Colors.white)),
+            content: Text(
+              "Only $available available for $selectedType.",
+              style: const TextStyle(color: Colors.white),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
 
-    await saveStockToDatabase(
-      productId: productId,
-      amount: amount,
-      date: isoUtc,
-      reason: selectedReason!,
-    );
+      final nowUtc = DateTime.now().toUtc();
+      final formattedDate = nowUtc.toIso8601String();
+      final finalReason =
+          selectedReason == "Others" ? otherReason : selectedReason!;
 
-    // ✅ Confirmation dialog
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
+      await saveReturnedStockToDatabase(
+        productId: productId,
+        amount: amount,
+        date: formattedDate,
+        reason: finalReason,
+      );
+
+      // ✅ Success dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFF1B263B),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title:
-              const Text("♻️ Stock Returned", style: TextStyle(color: Colors.white)),
+          title: const Text("♻️ Stock Returned",
+              style: TextStyle(color: Colors.white)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text("Water Type: $selectedType",
                   style: const TextStyle(color: Colors.white)),
-              const Text("Size: 20 Liters",
-                  style: TextStyle(color: Colors.white)),
-              Text("Amount: $amount",
-                  style: const TextStyle(color: Colors.white)),
-              Text("Reason: $selectedReason",
-                  style: const TextStyle(color: Colors.white)),
-              Text("Date: $formattedPHTime",
+              const Text("Size: 20 Liters", style: TextStyle(color: Colors.white)),
+              Text("Amount: $amount", style: const TextStyle(color: Colors.white)),
+              Text("Reason: $finalReason",
                   style: const TextStyle(color: Colors.white)),
             ],
           ),
@@ -188,15 +231,20 @@ class _ReturnStockState extends State<ReturnStock> {
               child: const Text("OK", style: TextStyle(color: Colors.blue)),
             ),
           ],
-        );
-      },
-    ).then((_) {
+        ),
+      );
+
       setState(() {
         selectedType = null;
         selectedReason = null;
+        otherReason = "";
         amount = 0;
       });
-    });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Error: $e")),
+      );
+    }
   }
 
   @override
@@ -205,14 +253,13 @@ class _ReturnStockState extends State<ReturnStock> {
       backgroundColor: const Color(0xFF021526),
       body: isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: Colors.lightBlueAccent),
-            )
+              child: CircularProgressIndicator(color: Colors.lightBlueAccent))
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    // 🔹 Header
+                    // Header
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -236,18 +283,15 @@ class _ReturnStockState extends State<ReturnStock> {
                               color: Colors.white,
                             ),
                           ),
-                        ),
-                        const Icon(Icons.account_circle,
-                            color: Colors.white, size: 32),
+                        )
                       ],
                     ),
-
                     const SizedBox(height: 40),
 
-                    // 🔹 Dropdown for 20L products
+                    // 🔹 Water Type Dropdown
                     if (waterTypes.isEmpty)
                       const Center(
-                        child: Text("No 20-Liter products available",
+                        child: Text("No delivery products available",
                             style: TextStyle(color: Colors.white70)),
                       )
                     else
@@ -278,57 +322,13 @@ class _ReturnStockState extends State<ReturnStock> {
                         ),
                       ),
 
-                    const SizedBox(height: 25),
-
+                    const SizedBox(height: 20),
                     const Text("Size: 20 Liters",
                         style: TextStyle(color: Colors.white70, fontSize: 16)),
 
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 20),
 
-                    // 🔹 Reason Dropdown
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1B263B),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: DropdownButton<String>(
-                        hint: const Text("Select Reason",
-                            style: TextStyle(color: Colors.white)),
-                        value: selectedReason,
-                        dropdownColor: const Color(0xFF1B263B),
-                        iconEnabledColor: Colors.white,
-                        isExpanded: true,
-                        underline: const SizedBox(),
-                        items: reasons.map((r) {
-                          return DropdownMenuItem(
-                            value: r,
-                            child: Text(r,
-                                style: const TextStyle(color: Colors.white)),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() => selectedReason = value);
-                        },
-                      ),
-                    ),
-
-                    const SizedBox(height: 30),
-
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        "Number of Containers:",
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500),
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // Amount counter
+                    // 🔹 Amount Counter
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -371,7 +371,58 @@ class _ReturnStockState extends State<ReturnStock> {
 
                     const SizedBox(height: 30),
 
-                    // 🔹 Confirm + Cancel Buttons
+                    // 🔹 Reason Dropdown
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1B263B),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: DropdownButton<String>(
+                        hint: const Text("Reason for Return",
+                            style: TextStyle(color: Colors.white)),
+                        value: selectedReason,
+                        dropdownColor: const Color(0xFF1B263B),
+                        iconEnabledColor: Colors.white,
+                        isExpanded: true,
+                        underline: const SizedBox(),
+                        items: returnReasons.map((reason) {
+                          return DropdownMenuItem(
+                            value: reason,
+                            child: Text(reason,
+                                style: const TextStyle(color: Colors.white)),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            selectedReason = value;
+                            if (value != "Others") otherReason = "";
+                          });
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // 🔹 “Others” input
+                    if (selectedReason == "Others")
+                      TextField(
+                        onChanged: (value) => setState(() => otherReason = value),
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: const Color(0xFF1B263B),
+                          hintText: "Enter reason",
+                          hintStyle: const TextStyle(color: Colors.white54),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 30),
+
+                    // 🔹 Buttons
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
@@ -383,9 +434,7 @@ class _ReturnStockState extends State<ReturnStock> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 30,
-                              vertical: 15,
-                            ),
+                                horizontal: 30, vertical: 15),
                           ),
                           onPressed: _confirmReturn,
                           child: const Text("Confirm"),
@@ -398,9 +447,7 @@ class _ReturnStockState extends State<ReturnStock> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 30,
-                              vertical: 15,
-                            ),
+                                horizontal: 30, vertical: 15),
                           ),
                           onPressed: () => Navigator.pop(context),
                           child: const Text("Cancel"),

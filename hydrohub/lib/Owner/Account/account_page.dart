@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hydrohub/Owner/Account/manage_staff.dart';
+import 'package:hydrohub/Owner/Account/station_profile.dart';
 import 'package:hydrohub/Owner/Account/update_staff.dart';
 import 'package:hydrohub/owner/Account/add_staff.dart';
 import '../../widgets/custom_menu_button.dart';
@@ -127,6 +128,19 @@ class AccountPage extends StatelessWidget {
                   const SizedBox(height: 60),
 
                   // Buttons
+                  CustomMenuButton(
+                    icon: Icons.store,
+                    label: "Station Account",
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => StationProfile(stationId: stationId),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
                   CustomMenuButton(
                     icon: Icons.person_add_alt_outlined,
                     label: "Add New Staff",

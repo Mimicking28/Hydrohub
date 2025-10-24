@@ -20,9 +20,9 @@ class _ProductLogsState extends State<ProductLogs> {
     fetchProducts();
   }
 
-  // ✅ Fetch all products
+  // ✅ Fetch all products (Admin View)
   Future<void> fetchProducts() async {
-    const String apiUrl = "http://10.0.2.2:3000/api/products";
+    const String apiUrl = "http://10.0.2.2:3000/api/products/admin";
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
@@ -34,7 +34,9 @@ class _ProductLogsState extends State<ProductLogs> {
       } else {
         setState(() => isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("❌ Failed to fetch products: ${response.statusCode}")),
+          SnackBar(
+              content:
+                  Text("❌ Failed to fetch products: ${response.statusCode}")),
         );
       }
     } catch (e) {
@@ -45,7 +47,7 @@ class _ProductLogsState extends State<ProductLogs> {
     }
   }
 
-  // ✅ Format date to PH time
+  // ✅ Format date to Philippine Time
   String formatToPHTime(String utcString) {
     try {
       final utcTime = DateTime.parse(utcString).toUtc();
@@ -53,6 +55,18 @@ class _ProductLogsState extends State<ProductLogs> {
       return DateFormat('yyyy-MM-dd hh:mm a').format(phTime);
     } catch (e) {
       return utcString;
+    }
+  }
+
+  // 🎨 Tag color based on product type (Onsite / Online)
+  Color getTypeColor(String type) {
+    switch (type.toLowerCase()) {
+      case "onsite":
+        return Colors.greenAccent;
+      case "delivery":
+        return Colors.blueAccent;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -64,12 +78,13 @@ class _ProductLogsState extends State<ProductLogs> {
         backgroundColor: const Color(0xFF1B263B),
         foregroundColor: Colors.white,
         title: const Text(
-          "All Product Logs",
+          "Product Logs (All Stations)",
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(color: Colors.lightBlueAccent))
           : products.isEmpty
               ? const Center(
                   child: Text(
@@ -78,39 +93,103 @@ class _ProductLogsState extends State<ProductLogs> {
                   ),
                 )
               : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 12),
                   itemCount: products.length,
                   itemBuilder: (context, index) {
                     final product = products[index];
+                    final type = product["type"] ?? "Unknown";
+                    final tagColor = getTypeColor(type);
                     final isArchived = product["is_archived"] == true;
 
                     return Card(
                       color: const Color(0xFF1B263B),
-                      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                      child: ListTile(
-                        leading: Icon(
-                          isArchived ? Icons.archive : Icons.local_drink,
-                          color: isArchived ? Colors.redAccent : Colors.greenAccent,
-                          size: 32,
-                        ),
-                        title: Text(
-                          "${product["name"] ?? "Unnamed"} (${product["size_category"] ?? ""})",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        subtitle: Text(
-                          "Station: ${product["station_name"] ?? "N/A"}\n"
-                          "Type: ${product["type"] ?? "N/A"}\n"
-                          "Price: ₱${product["price"] ?? "0"}\n"
-                          "Status: ${isArchived ? "Archived" : "Active"}\n"
-                          "Date Created: ${formatToPHTime(product["created_at"])}",
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 15,
-                            height: 1.5,
-                          ),
+                      margin: const EdgeInsets.symmetric(
+                          vertical: 8, horizontal: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      elevation: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.all(14.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 🔹 Header Line (Name + Tag)
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    "💧 ${product["name"] ?? "Unnamed"} (${product["size_category"] ?? "N/A"})",
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: tagColor.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    type.toUpperCase(),
+                                    style: TextStyle(
+                                      color: tagColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+
+                            // 🏪 Station Name
+                            Text(
+                              "🏪 Station: ${product["station_name"] ?? "N/A"}",
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 15,
+                                height: 1.5,
+                              ),
+                            ),
+
+                            // 💰 Price
+                            Text(
+                              "💰 Price: ₱${product["price"] ?? "0"}",
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 15,
+                                height: 1.5,
+                              ),
+                            ),
+
+                            // 📦 Status
+                            Text(
+                              "📦 Status: ${isArchived ? "Archived" : "Active"}",
+                              style: TextStyle(
+                                color: isArchived
+                                    ? Colors.redAccent
+                                    : Colors.greenAccent,
+                                fontSize: 15,
+                                height: 1.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+
+                            // 🕒 Date Created
+                            Text(
+                              "🕒 Created: ${formatToPHTime(product["created_at"] ?? "")}",
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 15,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     );

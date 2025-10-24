@@ -19,6 +19,7 @@ class _UpdateSalesState extends State<UpdateSales>
   List<dynamic> sales = [];
   List<dynamic> products = [];
   bool isLoading = true;
+  bool isUploading = false;
 
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
@@ -41,22 +42,37 @@ class _UpdateSalesState extends State<UpdateSales>
     fetchProductsAndSales();
   }
 
-  // ✅ Fetch both products and sales
   Future<void> fetchProductsAndSales() async {
     await fetchProducts();
     await fetchSales();
   }
 
-  // ✅ Fetch products for this station
+  // ✅ Fetch only ONSITE products (unique ones)
   Future<void> fetchProducts() async {
     final String apiUrl =
-        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}&type=onsite";
     final response = await http.get(Uri.parse(apiUrl));
 
     if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+
+      // Filter onsite + remove duplicates
+      final Set<String> seen = {};
+      final onsiteProducts = data.where((p) {
+        final type = p["type"]?.toString().toLowerCase().trim();
+        final key = "${p["name"]}_${p["size_category"]}";
+        if (type == "onsite" && !seen.contains(key)) {
+          seen.add(key);
+          return true;
+        }
+        return false;
+      }).toList();
+
       setState(() {
-        products = json.decode(response.body);
+        products = onsiteProducts;
       });
+
+      print("✅ Unique onsite products loaded: ${products.length}");
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Failed to fetch products: ${response.body}")),
@@ -85,28 +101,45 @@ class _UpdateSalesState extends State<UpdateSales>
   }
 
   // ✅ Update sale by ID
-  Future<void> updateSale(int id, Map<String, dynamic> updatedData) async {
+  Future<void> updateSale(int id, Map<String, dynamic> updatedData,
+      {File? proofImage}) async {
     final String apiUrl = "http://10.0.2.2:3000/api/sales/$id";
 
-    final response = await http.put(
-      Uri.parse(apiUrl),
-      headers: {"Content-Type": "application/json"},
-      body: json.encode(updatedData),
-    );
+    try {
+      setState(() => isUploading = true);
 
-    if (response.statusCode == 200) {
+      var request = http.MultipartRequest("PUT", Uri.parse(apiUrl));
+      updatedData.forEach((key, value) {
+        request.fields[key] = value.toString();
+      });
+
+      if (proofImage != null) {
+        request.files
+            .add(await http.MultipartFile.fromPath("proof", proofImage.path));
+      }
+
+      var response = await request.send();
+
+      setState(() => isUploading = false);
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Sale updated successfully")),
+        );
+        fetchSales();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Failed to update sale: ${response.statusCode}")),
+        );
+      }
+    } catch (e) {
+      setState(() => isUploading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Sale updated successfully")),
-      );
-      fetchSales();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Failed to update sale: ${response.body}")),
+        SnackBar(content: Text("❌ Error updating sale: $e")),
       );
     }
   }
 
-  // ✅ Format UTC → PH time
   String formatToPHTime(String utcString) {
     try {
       final utcTime = DateTime.parse(utcString).toUtc();
@@ -124,28 +157,26 @@ class _UpdateSalesState extends State<UpdateSales>
     int quantity = sale["quantity"];
     double total = double.tryParse(sale["total"].toString()) ?? 0.0;
     String payment = sale["payment_method"];
+    File? proofImage;
 
-    File? proofImage; // ✅ Payment proof image file
     final ImagePicker _picker = ImagePicker();
-
     final List<String> paymentMethods = ["Cash", "E-wallet"];
 
-    // Group products by water type for dynamic dropdown
-    final Map<String, List<String>> waterTypeToSizes = {};
-    final Map<String, Map<String, double>> priceMap = {};
-
+    // Build waterType -> sizes map (unique)
+    final Map<String, Map<String, double>> productMap = {};
     for (var p in products) {
-      final type = p["name"];
+      final name = p["name"];
       final size = p["size_category"];
       final price = double.tryParse(p["price"].toString()) ?? 0.0;
 
-      waterTypeToSizes.putIfAbsent(type, () => []);
-      if (!waterTypeToSizes[type]!.contains(size)) {
-        waterTypeToSizes[type]!.add(size);
-      }
+      productMap.putIfAbsent(name, () => {});
+      productMap[name]![size] = price;
+    }
 
-      priceMap.putIfAbsent(type, () => {});
-      priceMap[type]![size] = price;
+    void showValidationError(String msg) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("⚠️ $msg")),
+      );
     }
 
     showDialog(
@@ -164,50 +195,54 @@ class _UpdateSalesState extends State<UpdateSales>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 🔹 Water Type
+                    // Water Type
                     DropdownButtonFormField<String>(
-                      value: selectedWater,
+                      value: productMap.keys.contains(selectedWater)
+                          ? selectedWater
+                          : null,
                       dropdownColor: const Color(0xFF1B263B),
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
                         labelText: "Water Type",
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
-                      items: waterTypeToSizes.keys.map((type) {
+                      items: productMap.keys.map((type) {
                         return DropdownMenuItem(value: type, child: Text(type));
                       }).toList(),
                       onChanged: (val) {
                         setDialogState(() {
                           selectedWater = val!;
-                          selectedSize = waterTypeToSizes[val]!.first;
-                          total = (priceMap[selectedWater]?[selectedSize] ?? 0) * quantity;
+                          selectedSize = productMap[val]!.keys.first;
+                          total = (productMap[selectedWater]?[selectedSize] ?? 0) * quantity;
                         });
                       },
                     ),
                     const SizedBox(height: 10),
 
-                    // 🔹 Size
+                    // Size
                     DropdownButtonFormField<String>(
-                      value: selectedSize,
+                      value: productMap[selectedWater]?.containsKey(selectedSize) ?? false
+                          ? selectedSize
+                          : null,
                       dropdownColor: const Color(0xFF1B263B),
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
                         labelText: "Size",
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
-                      items: (waterTypeToSizes[selectedWater] ?? [])
+                      items: (productMap[selectedWater]?.keys.toList() ?? [])
                           .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                           .toList(),
                       onChanged: (val) {
                         setDialogState(() {
                           selectedSize = val!;
-                          total = (priceMap[selectedWater]?[selectedSize] ?? 0) * quantity;
+                          total = (productMap[selectedWater]?[selectedSize] ?? 0) * quantity;
                         });
                       },
                     ),
                     const SizedBox(height: 10),
 
-                    // 🔹 Quantity Selector
+                    // Quantity
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -215,7 +250,7 @@ class _UpdateSalesState extends State<UpdateSales>
                           onPressed: () {
                             setDialogState(() {
                               if (quantity > 1) quantity--;
-                              total = (priceMap[selectedWater]?[selectedSize] ?? 0) * quantity;
+                              total = (productMap[selectedWater]?[selectedSize] ?? 0) * quantity;
                             });
                           },
                           icon: const Icon(Icons.remove_circle, color: Colors.white),
@@ -226,7 +261,7 @@ class _UpdateSalesState extends State<UpdateSales>
                           onPressed: () {
                             setDialogState(() {
                               quantity++;
-                              total = (priceMap[selectedWater]?[selectedSize] ?? 0) * quantity;
+                              total = (productMap[selectedWater]?[selectedSize] ?? 0) * quantity;
                             });
                           },
                           icon: const Icon(Icons.add_circle, color: Colors.white),
@@ -235,14 +270,13 @@ class _UpdateSalesState extends State<UpdateSales>
                     ),
                     const SizedBox(height: 10),
 
-                    // 💰 Total Price
                     Text(
                       "₱${total.toStringAsFixed(2)}",
                       style: const TextStyle(color: Colors.greenAccent, fontSize: 18),
                     ),
                     const SizedBox(height: 10),
 
-                    // 🔹 Payment Method
+                    // Payment
                     DropdownButtonFormField<String>(
                       value: payment,
                       dropdownColor: const Color(0xFF1B263B),
@@ -258,7 +292,7 @@ class _UpdateSalesState extends State<UpdateSales>
                     ),
                     const SizedBox(height: 15),
 
-                    // 📸 Show image picker only if E-wallet chosen
+                    // E-wallet Proof
                     if (payment == "E-wallet") ...[
                       ElevatedButton.icon(
                         onPressed: () async {
@@ -299,6 +333,15 @@ class _UpdateSalesState extends State<UpdateSales>
             ),
             TextButton(
               onPressed: () {
+                if (selectedWater.isEmpty || selectedSize.isEmpty) {
+                  showValidationError("Please select a water type and size");
+                  return;
+                }
+                if (quantity <= 0) {
+                  showValidationError("Quantity must be greater than 0");
+                  return;
+                }
+
                 final data = {
                   "water_type": selectedWater,
                   "size": selectedSize,
@@ -307,12 +350,10 @@ class _UpdateSalesState extends State<UpdateSales>
                   "date": sale["date"],
                   "payment_method": payment,
                   "sale_type": "onsite",
-                  "station_id": widget.stationId,
                   "staff_id": widget.staffId,
                 };
 
-                // ⚠️ For now, proofImage is not uploaded yet.
-                updateSale(sale["id"], data);
+                updateSale(sale["id"], data, proofImage: proofImage);
                 Navigator.pop(context);
               },
               child: const Text("Update",
@@ -338,55 +379,77 @@ class _UpdateSalesState extends State<UpdateSales>
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: sales.isEmpty
-                    ? const Center(
-                        child: Text(
-                          "No onsite sales available",
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: sales.length,
-                        itemBuilder: (context, index) {
-                          final sale = sales[index];
-                          return Card(
-                            color: const Color(0xFF1B263B),
-                            margin: const EdgeInsets.symmetric(
-                                vertical: 8, horizontal: 12),
-                            child: ListTile(
-                              title: Text(
-                                "${sale["water_type"]} (${sale["size"]})",
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Text(
-                                "Qty: ${sale["quantity"]}\n"
-                                "₱${sale["total"]}\n"
-                                "${sale["payment_method"]}\n"
-                                "${formatToPHTime(sale["date"])}",
-                                style: const TextStyle(color: Colors.white70),
-                              ),
-                              trailing: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+          : Stack(
+              children: [
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: sales.isEmpty
+                        ? const Center(
+                            child: Text(
+                              "No onsite sales available",
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: sales.length,
+                            itemBuilder: (context, index) {
+                              final sale = sales[index];
+                              return Card(
+                                color: const Color(0xFF1B263B),
+                                margin: const EdgeInsets.symmetric(
+                                    vertical: 8, horizontal: 12),
+                                child: ListTile(
+                                  title: Text(
+                                    "${sale["water_type"]} (${sale["size"]})",
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  subtitle: Text(
+                                    "Qty: ${sale["quantity"]}\n"
+                                    "₱${sale["total"]}\n"
+                                    "${sale["payment_method"]}\n"
+                                    "${formatToPHTime(sale["date"])}",
+                                    style:
+                                        const TextStyle(color: Colors.white70),
+                                  ),
+                                  trailing: ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.blue,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    onPressed: () => showUpdateDialog(sale),
+                                    child: const Text("Update"),
                                   ),
                                 ),
-                                onPressed: () => showUpdateDialog(sale),
-                                child: const Text("Update"),
-                              ),
-                            ),
-                          );
-                        },
+                              );
+                            },
+                          ),
+                  ),
+                ),
+                if (isUploading)
+                  Container(
+                    color: Colors.black.withOpacity(0.6),
+                    child: const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(
+                              color: Colors.lightBlueAccent),
+                          SizedBox(height: 10),
+                          Text("Uploading...",
+                              style: TextStyle(color: Colors.white)),
+                        ],
                       ),
-              ),
+                    ),
+                  ),
+              ],
             ),
     );
   }

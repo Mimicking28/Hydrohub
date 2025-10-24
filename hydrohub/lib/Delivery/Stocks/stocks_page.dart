@@ -11,12 +11,7 @@ import '../profile.dart';
 class StocksDeliverPage extends StatefulWidget {
   final int stationId;
   final int staffId;
-
-  const StocksDeliverPage({
-    super.key,
-    required this.stationId,
-    required this.staffId,
-  });
+  const StocksDeliverPage({super.key, required this.stationId, required this.staffId});
 
   @override
   State<StocksDeliverPage> createState() => _StocksDeliverPageState();
@@ -32,14 +27,11 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
     fetchStockData();
   }
 
-  // ✅ Fetch real stock data from backend
   Future<void> fetchStockData() async {
     setState(() => isLoading = true);
     try {
       final response = await http.get(
-        Uri.parse(
-          "http://10.0.2.2:3000/api/stocks/stock_summary?station_id=${widget.stationId}",
-        ),
+        Uri.parse("http://10.0.2.2:3000/api/stocks/summary/${widget.stationId}"),
       );
 
       if (response.statusCode == 200) {
@@ -60,12 +52,12 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
     }
   }
 
-  // ✅ Clean product name for display
+  // ✅ Remove “20 Liters” text before displaying
   String cleanProductName(String name) {
     return name.replaceAll(RegExp(r'20\s*Liters', caseSensitive: false), '').trim();
   }
 
-  // ✅ Stock card UI
+  // ✅ Stock Card Design
   Widget buildStockCard(Map<String, dynamic> stock) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -80,7 +72,7 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
         children: [
           Expanded(
             child: Text(
-              cleanProductName(stock["name"]),
+              cleanProductName(stock["product_name"]),
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.white,
@@ -101,7 +93,6 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
     );
   }
 
-  // ✅ Stock list builder
   Widget buildStockList() {
     if (stockSummary.isEmpty) {
       return const Padding(
@@ -173,7 +164,7 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // 👤 Profile Icon
+                      // Profile Icon
                       Align(
                         alignment: Alignment.topRight,
                         child: IconButton(
@@ -195,7 +186,6 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 10),
 
                       // HydroHub Title
@@ -239,7 +229,7 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
                       Column(
                         children: [
                           const Text(
-                            "Available Stocks",
+                            "🚚 Delivery Stocks",
                             style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -250,7 +240,7 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
                           const SizedBox(height: 6),
                           Container(
                             height: 3,
-                            width: 150,
+                            width: 160,
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
                                 colors: [
@@ -297,7 +287,6 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
                         },
                       ),
                       const SizedBox(height: 20),
-
                       CustomMenuButton(
                         icon: Icons.update,
                         label: "Update Delivery Stock",
@@ -315,7 +304,6 @@ class _StocksDeliverPageState extends State<StocksDeliverPage> {
                         },
                       ),
                       const SizedBox(height: 20),
-
                       CustomMenuButton(
                         icon: Icons.undo,
                         label: "Return Stock",

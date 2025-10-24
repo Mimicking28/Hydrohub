@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 class UpdateDeliveryStock extends StatefulWidget {
   final int stationId;
   final int staffId;
-
   const UpdateDeliveryStock({
     super.key,
     required this.stationId,
@@ -22,7 +21,7 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
   List<dynamic> products = [];
   bool isLoading = true;
 
-  List<String> waterTypes = []; // ✅ unique 20L names
+  List<String> waterTypes = [];
   Map<String, int> productMap = {}; // name → product_id
 
   @override
@@ -31,26 +30,32 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
     fetchProductsForStation();
   }
 
-  // ✅ Fetch unique 20-liter products
+  // ✅ Fetch only ACTIVE DELIVERY products for this station
   Future<void> fetchProductsForStation() async {
-    final url = "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+    final url =
+        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}&type=delivery";
+
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
+        final List<dynamic> data = json.decode(response.body);
 
-        // Keep only 20-liter products and remove duplicates
+        // 🔹 Keep only active delivery products
         final filtered = data.where((p) {
-          final size = (p["size_category"] ?? "").toString().toLowerCase();
-          return size.contains("20") && size.contains("liter");
+          final type = (p["type"] ?? "").toString().toLowerCase().trim();
+          final archived = p["is_archived"];
+          final bool isActive = (archived == false ||
+              archived == 0 ||
+              archived == null ||
+              archived.toString().toLowerCase() == "false");
+
+          return type == "delivery" && isActive;
         }).toList();
 
+        // 🔹 Map product name → id
         final Map<String, int> uniqueProducts = {};
         for (var p in filtered) {
-          final name = (p["name"] ?? "").toString();
-          if (!uniqueProducts.containsKey(name)) {
-            uniqueProducts[name] = p["id"];
-          }
+          uniqueProducts[p["name"]] = p["id"];
         }
 
         setState(() {
@@ -66,14 +71,15 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
     } catch (e) {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("❌ Failed to load products: $e")));
+        SnackBar(content: Text("❌ Failed to load products: $e")),
+      );
     }
   }
 
-  // ✅ Fetch delivered stock entries
+  // ✅ Fetch delivered stock records
   Future<void> fetchDeliveredStocks() async {
     final url =
-        "http://10.0.2.2:3000/api/stocks/delivered?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/stocks/type/${widget.stationId}/delivered";
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
@@ -87,38 +93,51 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
       }
     } catch (e) {
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("⚠️ Error: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("⚠️ Error fetching stocks: $e")),
+      );
     }
   }
 
-  // ✅ Update record
+  // ✅ Update a delivered stock entry
   Future<void> updateStock(int id, Map<String, dynamic> updatedData) async {
     final url = "http://10.0.2.2:3000/api/stocks/$id";
     try {
-      final response = await http.put(Uri.parse(url),
-          headers: {"Content-Type": "application/json"},
-          body: json.encode(updatedData));
+      final response = await http.put(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json"},
+        body: json.encode(updatedData),
+      );
 
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("✅ Stock updated successfully")));
+          const SnackBar(content: Text("✅ Delivered stock updated successfully")),
+        );
         fetchDeliveredStocks();
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("❌ Failed: ${response.body}")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Update failed: ${response.body}")),
+        );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("⚠️ Error updating: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("⚠️ Error updating: $e")),
+      );
     }
   }
 
-  // ✅ Dialog for updating delivered stock
+  // ✅ Update Dialog
   void showUpdateDialog(Map<String, dynamic> stock) {
-    final currentProduct =
-        products.firstWhere((p) => p["id"] == stock["product_id"], orElse: () => {});
-    String selectedType = currentProduct["name"] ?? "Unknown";
+    final currentProduct = products.firstWhere(
+      (p) => p["id"] == stock["product_id"],
+      orElse: () => {},
+    );
+
+    String selectedType =
+        currentProduct["name"] != null && waterTypes.contains(currentProduct["name"])
+            ? currentProduct["name"]
+            : (waterTypes.isNotEmpty ? waterTypes.first : "");
+
     int amount = stock["amount"];
 
     showDialog(
@@ -127,16 +146,18 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
         return StatefulBuilder(builder: (context, setDialogState) {
           return AlertDialog(
             backgroundColor: const Color(0xFF1B263B),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             title: const Text("✏️ Update Delivered Stock",
                 style: TextStyle(color: Colors.white)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Water type dropdown
                 DropdownButton<String>(
-                  value: selectedType,
+                  value: waterTypes.contains(selectedType) ? selectedType : null,
+                  hint: const Text("Select Water Type",
+                      style: TextStyle(color: Colors.white)),
                   dropdownColor: const Color(0xFF1B263B),
                   iconEnabledColor: Colors.white,
                   isExpanded: true,
@@ -144,38 +165,42 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
                   items: waterTypes.map((type) {
                     return DropdownMenuItem(
                       value: type,
-                      child:
-                          Text(type, style: const TextStyle(color: Colors.white)),
+                      child: Text(type,
+                          style: const TextStyle(color: Colors.white)),
                     );
                   }).toList(),
-                  onChanged: (v) => setDialogState(() => selectedType = v!),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedType = value!;
+                    });
+                  },
                 ),
                 const SizedBox(height: 10),
                 const Text("Size: 20 Liters",
                     style: TextStyle(color: Colors.white70)),
                 const SizedBox(height: 10),
-
-                // Amount counter
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
-                        onPressed: () {
-                          setDialogState(() {
-                            if (amount > 0) amount--;
-                          });
-                        },
-                        icon: const Icon(Icons.remove_circle,
-                            color: Colors.white)),
+                      onPressed: () {
+                        setDialogState(() {
+                          if (amount > 0) amount--;
+                        });
+                      },
+                      icon: const Icon(Icons.remove_circle, color: Colors.white),
+                    ),
                     Text("$amount",
                         style:
                             const TextStyle(color: Colors.white, fontSize: 18)),
                     IconButton(
-                        onPressed: () {
-                          setDialogState(() => amount++);
-                        },
-                        icon:
-                            const Icon(Icons.add_circle, color: Colors.white)),
+                      onPressed: () {
+                        setDialogState(() {
+                          amount++;
+                        });
+                      },
+                      icon: const Icon(Icons.add_circle, color: Colors.white),
+                    ),
                   ],
                 ),
               ],
@@ -183,8 +208,8 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child:
-                    const Text("Cancel", style: TextStyle(color: Colors.redAccent)),
+                child: const Text("Cancel",
+                    style: TextStyle(color: Colors.redAccent)),
               ),
               TextButton(
                 onPressed: () {
@@ -199,7 +224,6 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
                     "product_id": productId,
                     "amount": amount,
                     "stock_type": "delivered",
-                    "reason": stock["reason"] ?? "",
                     "date": stock["date"],
                     "staff_id": widget.staffId
                   };
@@ -217,13 +241,13 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
     );
   }
 
-  // ✅ Convert UTC → PH Time
+  // ✅ Convert UTC → PH time
   String formatToPHTime(String utcString) {
     try {
       final utc = DateTime.parse(utcString).toUtc();
-      final phTime = utc.add(const Duration(hours: 8));
-      return DateFormat('yyyy-MM-dd hh:mm a').format(phTime);
-    } catch (_) {
+      final ph = utc.add(const Duration(hours: 8));
+      return DateFormat('yyyy-MM-dd hh:mm a').format(ph);
+    } catch (e) {
       return utcString;
     }
   }
@@ -247,22 +271,21 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
                       style: TextStyle(color: Colors.white70)))
               : ListView.builder(
                   itemCount: stocks.length,
-                  itemBuilder: (context, i) {
-                    final stock = stocks[i];
-                    final product = products.firstWhere(
-                        (p) => p["id"] == stock["product_id"],
-                        orElse: () => {});
-                    final name = product["name"] ?? "Unknown";
+                  itemBuilder: (context, index) {
+                    final stock = stocks[index];
+                    final name = stock["product_name"] ?? "Unknown Product";
 
                     return Card(
                       color: const Color(0xFF1B263B),
-                      margin:
-                          const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      margin: const EdgeInsets.symmetric(
+                          vertical: 8, horizontal: 12),
                       child: ListTile(
                         title: Text(
                           "$name - 20 Liters",
                           style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold),
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         subtitle: Text(
                           "Amount: ${stock["amount"]}\n"
@@ -281,7 +304,8 @@ class _UpdateDeliveryStockState extends State<UpdateDeliveryStock> {
                         ),
                       ),
                     );
-                  }),
+                  },
+                ),
     );
   }
 }

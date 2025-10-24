@@ -30,7 +30,7 @@ class _AddSaleState extends State<AddSale> {
   final ImagePicker _picker = ImagePicker();
 
   List<dynamic> products = [];
-  Map<String, Map<String, double>> productMap = {}; // name → {size: price}
+  Map<String, Map<String, double>> productMap = {};
   List<String> availableProducts = [];
   List<String> availableSizes = [];
 
@@ -43,7 +43,7 @@ class _AddSaleState extends State<AddSale> {
     fetchOnsiteProducts();
   }
 
-  // ✅ Fetch onsite products for this station
+  // ✅ Fetch onsite products (active only)
   Future<void> fetchOnsiteProducts() async {
     final String apiUrl =
         "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}&type=onsite";
@@ -53,11 +53,27 @@ class _AddSaleState extends State<AddSale> {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+        print("✅ Raw products fetched: $data");
+
+        // 🔹 Filter only non-archived (active) products
+        final activeProducts = data.where((p) {
+          final archived = p["is_archived"];
+          if (archived is bool) return archived == false;
+          if (archived is int) return archived == 0;
+          if (archived is String) {
+            return archived.toLowerCase() == "false" || archived == "0";
+          }
+          return true; // Treat null as active
+        }).toList();
+
+        if (activeProducts.isEmpty) {
+          print("⚠️ No active products found for station ${widget.stationId}");
+        }
 
         final Map<String, Map<String, double>> newProductMap = {};
         final Set<String> productSet = {};
 
-        for (var p in data) {
+        for (var p in activeProducts) {
           final name = p["name"] ?? "Unknown";
           final size = p["size_category"] ?? "N/A";
           final price = double.tryParse(p["price"].toString()) ?? 0.0;
@@ -68,11 +84,13 @@ class _AddSaleState extends State<AddSale> {
         }
 
         setState(() {
-          products = data;
+          products = activeProducts;
           productMap = newProductMap;
           availableProducts = productSet.toList();
           isLoading = false;
         });
+
+        print("✅ Active products: $availableProducts");
       } else {
         throw Exception("Failed to fetch onsite products");
       }
@@ -132,7 +150,6 @@ class _AddSaleState extends State<AddSale> {
     var response = await request.send();
 
     if (response.statusCode == 200 || response.statusCode == 201) {
-      // ✅ Show confirmation only on success
       showDialog(
         context: context,
         builder: (context) {
@@ -169,7 +186,6 @@ class _AddSaleState extends State<AddSale> {
         },
       );
 
-      // Reset form after successful save
       setState(() {
         selectedProduct = null;
         selectedSize = null;
@@ -242,12 +258,20 @@ class _AddSaleState extends State<AddSale> {
                       iconEnabledColor: Colors.white,
                       isExpanded: true,
                       underline: const SizedBox(),
-                      items: availableProducts.map((name) {
-                        return DropdownMenuItem(
-                          value: name,
-                          child: Text(name, style: const TextStyle(color: Colors.white)),
-                        );
-                      }).toList(),
+                      items: availableProducts.isEmpty
+                          ? [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text("No active products available",
+                                    style: TextStyle(color: Colors.redAccent)),
+                              )
+                            ]
+                          : availableProducts.map((name) {
+                              return DropdownMenuItem(
+                                value: name,
+                                child: Text(name, style: const TextStyle(color: Colors.white)),
+                              );
+                            }).toList(),
                       onChanged: (value) {
                         setState(() {
                           selectedProduct = value;
@@ -367,22 +391,24 @@ class _AddSaleState extends State<AddSale> {
                             backgroundColor: Colors.blue,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20)),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 30, vertical: 15),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                           ),
                           onPressed: _confirmSale,
-                          child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+                          child:
+                              const Text("Confirm", style: TextStyle(color: Colors.white)),
                         ),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.red,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20)),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 30, vertical: 15),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                           ),
                           onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel", style: TextStyle(color: Colors.white)),
+                          child:
+                              const Text("Cancel", style: TextStyle(color: Colors.white)),
                         ),
                       ],
                     ),

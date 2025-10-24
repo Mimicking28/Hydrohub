@@ -5,6 +5,8 @@ import 'package:hydrohub/Administrator/Account/add_owner.dart';
 import 'package:hydrohub/Administrator/Account/manage_station.dart';
 import '../../widgets/custom_menu_button.dart';
 import '../home_page.dart';
+import 'package:hydrohub/Sessions/admin_session.dart';
+import '../profile.dart';
 
 class AccountPage extends StatelessWidget {
   const AccountPage({super.key});
@@ -67,9 +69,16 @@ class AccountPage extends StatelessWidget {
                   Align(
                     alignment: Alignment.topRight,
                     child: IconButton(
-                      onPressed: () {
-                        // TODO: Add profile page navigation
-                      },
+                     onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                            builder: (context) => AdminProfilePage(
+                            adminId: AdminSession.adminId!, // 👈 Pass current admin’s ID
+                          ),
+                        ),
+                          );
+                        },
                       icon: const Icon(
                         Icons.account_circle,
                         size: 35,
@@ -77,6 +86,7 @@ class AccountPage extends StatelessWidget {
                       ),
                     ),
                   ),
+
 
                   const SizedBox(height: 20),
 

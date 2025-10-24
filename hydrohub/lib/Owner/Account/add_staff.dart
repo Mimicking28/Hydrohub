@@ -1,37 +1,57 @@
+// ignore_for_file: use_build_context_synchronously
+
+import 'dart:math';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 class AddStaff extends StatefulWidget {
-  final int stationId;
+  final int stationId; // ✅ Owner’s station_id
 
   const AddStaff({super.key, required this.stationId});
 
   @override
-  State<AddStaff> createState() => _AddStaffState();
+  State<AddStaff> createState() => _AddStaffAccountPageState();
 }
 
-class _AddStaffState extends State<AddStaff> {
+class _AddStaffAccountPageState extends State<AddStaff> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
 
   String? selectedGender;
-  String? selectedType; // "Onsite" or "Delivery"
+  String? selectedType; // Onsite or Delivery
+  String generatedUsername = "";
+  String generatedPassword = "";
+  bool isLoading = false;
 
-  // ✅ Save staff to backend
+  // ✅ Random password generator
+  String generateRandomPassword(int length) {
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#\$%^&*()';
+    final rand = Random.secure();
+    return List.generate(length, (_) => chars[rand.nextInt(chars.length)]).join();
+  }
+
+  void generateCredentials() {
+    generatedPassword = generateRandomPassword(10);
+  }
+
+  // ✅ Save to backend
   Future<void> saveToDatabase() async {
+    setState(() => isLoading = true);
     final url = Uri.parse("http://10.0.2.2:3000/api/accounts/staff");
 
     final body = {
       "station_id": widget.stationId.toString(),
       "first_name": _firstNameController.text.trim(),
       "last_name": _lastNameController.text.trim(),
-      "gender": selectedGender,
+      "gender": selectedGender!,
       "phone_number": _phoneController.text.trim(),
-      "type": selectedType,
-      "password": "default123", // optional placeholder if backend requires
+      "type": selectedType!,
+      "password": generatedPassword,
     };
 
     try {
@@ -43,53 +63,92 @@ class _AddStaffState extends State<AddStaff> {
 
       final data = jsonDecode(response.body);
       if (response.statusCode == 201 && data["success"] == true) {
-        _showSuccessDialog(
-          generatedUsername: data["username"],
-          staffType: selectedType!,
-        );
+        setState(() => generatedUsername = data["username"]);
+        _showSuccessDialog();
       } else {
-        _showPopupMessage(data["error"] ?? "Failed to add staff");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text(data["error"] ?? "Failed to add staff"),
+          ),
+        );
       }
     } catch (e) {
-      _showPopupMessage("❌ Server connection error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent,
+          content: Text("Error connecting to server: $e"),
+        ),
+      );
+    } finally {
+      setState(() => isLoading = false);
     }
   }
 
-  // ✅ Confirmation before sending
   void _confirmAddStaff() async {
     if (!_formKey.currentState!.validate()) return;
     if (selectedGender == null) {
-      _showPopupMessage("Please select gender");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select gender")),
+      );
       return;
     }
     if (selectedType == null) {
-      _showPopupMessage("Please select staff type");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select staff type")),
+      );
       return;
     }
 
+    generateCredentials();
     await saveToDatabase();
   }
 
-  // ✅ Success Dialog
-  void _showSuccessDialog({required String generatedUsername, required String staffType}) {
+  // ✅ Success dialog with Copy Credentials
+  void _showSuccessDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF021526),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("✅ Staff Account Created", style: TextStyle(color: Colors.white)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          "✅ Staff Account Created",
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Staff: ${_firstNameController.text} ${_lastNameController.text}",
+            Text("Name: ${_firstNameController.text} ${_lastNameController.text}",
                 style: const TextStyle(color: Colors.white)),
-            Text("Type: $staffType", style: const TextStyle(color: Colors.white)),
+            Text("Gender: $selectedGender",
+                style: const TextStyle(color: Colors.white70)),
+            Text("Type: $selectedType",
+                style: const TextStyle(color: Colors.white70)),
+            Text("Phone: ${_phoneController.text}",
+                style: const TextStyle(color: Colors.white70)),
             const Divider(color: Colors.white24),
             Text("Username: $generatedUsername",
                 style: const TextStyle(color: Colors.lightBlueAccent)),
-            const Text("Password: (auto-generated)",
-                style: TextStyle(color: Colors.orangeAccent)),
+            Text("Password: $generatedPassword",
+                style: const TextStyle(color: Colors.orangeAccent)),
+            const SizedBox(height: 10),
+
+            // 📋 Copy Credentials
+            TextButton.icon(
+              icon: const Icon(Icons.copy, color: Colors.lightBlueAccent),
+              label: const Text("Copy Credentials",
+                  style: TextStyle(color: Colors.lightBlueAccent)),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(
+                  text:
+                      "Username: $generatedUsername\nPassword: $generatedPassword",
+                ));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Copied to clipboard")),
+                );
+              },
+            ),
           ],
         ),
         actions: [
@@ -98,41 +157,23 @@ class _AddStaffState extends State<AddStaff> {
               Navigator.pop(context);
               _resetForm();
             },
-            child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+            child:
+                const Text("OK", style: TextStyle(color: Colors.lightBlueAccent)),
           ),
         ],
       ),
     );
   }
 
-  // ✅ Popup Error
-  void _showPopupMessage(String message) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Colors.red[100],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text("Error",
-            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-        content: Text(message, style: const TextStyle(color: Colors.black)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("OK"),
-          )
-        ],
-      ),
-    );
-  }
-
   void _resetForm() {
-    setState(() {
-      _firstNameController.clear();
-      _lastNameController.clear();
-      _phoneController.clear();
-      selectedGender = null;
-      selectedType = null;
-    });
+    _firstNameController.clear();
+    _lastNameController.clear();
+    _phoneController.clear();
+    selectedGender = null;
+    selectedType = null;
+    generatedUsername = "";
+    generatedPassword = "";
+    setState(() {});
   }
 
   @override
@@ -140,137 +181,148 @@ class _AddStaffState extends State<AddStaff> {
     return Scaffold(
       backgroundColor: const Color(0xFF021526),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
-                    Text("HydroHub",
-                        style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white)),
-                    Icon(Icons.badge, color: Colors.white, size: 32),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // 🔹 HydroHub Header
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "HydroHub",
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 30),
+
+              const Text(
+                "Add Staff Account",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 30),
+
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    _buildTextField("First Name", _firstNameController),
+                    const SizedBox(height: 20),
+                    _buildTextField("Last Name", _lastNameController),
+                    const SizedBox(height: 20),
+                    _buildGenderDropdown(),
+                    const SizedBox(height: 25),
+
+                    // 🔘 Staff Type Buttons
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Select Staff Type",
+                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildTypeButton("Onsite"),
+                        const SizedBox(width: 12),
+                        _buildTypeButton("Delivery"),
+                      ],
+                    ),
+
+                    const SizedBox(height: 25),
+                    _buildPhoneField(),
+                    const SizedBox(height: 40),
+
+                    // 🔹 Buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.lightBlueAccent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 40, vertical: 14),
+                          ),
+                          onPressed: isLoading ? null : _confirmAddStaff,
+                          child: isLoading
+                              ? const CircularProgressIndicator(color: Colors.white)
+                              : const Text("Add Staff",
+                                  style: TextStyle(color: Colors.white)),
+                        ),
+                        const SizedBox(width: 20),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.redAccent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 40, vertical: 14),
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Cancel",
+                              style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 30),
-                const Center(
-                  child: Text(
-                    "Add Staff Account",
-                    style: TextStyle(
-                        fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                ),
-                const SizedBox(height: 25),
-                Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      _buildTextField(
-                        controller: _firstNameController,
-                        label: "First Name",
-                        validatorText: "Please enter first name",
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTextField(
-                        controller: _lastNameController,
-                        label: "Last Name",
-                        validatorText: "Please enter last name",
-                      ),
-                      const SizedBox(height: 20),
-                      DropdownButtonFormField<String>(
-                        value: selectedGender,
-                        dropdownColor: const Color(0xFF1B263B),
-                        style: const TextStyle(color: Colors.white),
-                        decoration: _dropdownDecoration("Gender"),
-                        items: const [
-                          DropdownMenuItem(value: "Male", child: Text("Male")),
-                          DropdownMenuItem(value: "Female", child: Text("Female")),
-                        ],
-                        onChanged: (value) => setState(() => selectedGender = value),
-                        validator: (v) => v == null ? "Please select gender" : null,
-                      ),
-                      const SizedBox(height: 20),
-
-                      // ✅ Staff Type Selection
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          "Select Staff Type",
-                          style: TextStyle(color: Colors.white70, fontSize: 16),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _typeButton("Onsite"),
-                          const SizedBox(width: 12),
-                          _typeButton("Delivery"),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTextField(
-                        controller: _phoneController,
-                        label: "Phone Number (11 digits)",
-                        keyboardType: TextInputType.number,
-                        validator: (v) {
-                          if (v == null || v.isEmpty) {
-                            return "Please enter phone number";
-                          }
-                          if (!RegExp(r'^[0-9]{11}$').hasMatch(v)) {
-                            return "Phone number must be 11 digits";
-                          }
-                          return null;
-                        },
-                        validatorText: "",
-                      ),
-                      const SizedBox(height: 40),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(20)),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 30, vertical: 15),
-                            ),
-                            onPressed: _confirmAddStaff,
-                            child: const Text("Add Staff",
-                                style: TextStyle(color: Colors.white)),
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(20)),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 30, vertical: 15),
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text("Cancel",
-                                style: TextStyle(color: Colors.white)),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _typeButton(String label) {
+  // 🧩 Reusable Widgets
+  Widget _buildTextField(String label, TextEditingController controller) {
+    return TextFormField(
+      controller: controller,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white70),
+        filled: true,
+        fillColor: const Color(0xFF1B263B),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF6EACDA), width: 1),
+        ),
+      ),
+      validator: (v) => v!.isEmpty ? "Please enter $label" : null,
+    );
+  }
+
+  Widget _buildGenderDropdown() {
+    return DropdownButtonFormField<String>(
+      value: selectedGender,
+      dropdownColor: const Color(0xFF1B263B),
+      style: const TextStyle(color: Colors.white),
+      decoration: _dropdownDecoration("Gender"),
+      items: const [
+        DropdownMenuItem(value: "Male", child: Text("Male")),
+        DropdownMenuItem(value: "Female", child: Text("Female")),
+      ],
+      onChanged: (value) => setState(() => selectedGender = value),
+      validator: (v) => v == null ? "Please select gender" : null,
+    );
+  }
+
+  Widget _buildTypeButton(String label) {
     final isSelected = selectedType == label;
     return Expanded(
       child: GestureDetector(
@@ -312,19 +364,17 @@ class _AddStaffState extends State<AddStaff> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String validatorText,
-    TextInputType keyboardType = TextInputType.text,
-    String? Function(String?)? validator,
-  }) {
+  Widget _buildPhoneField() {
     return TextFormField(
-      controller: controller,
+      controller: _phoneController,
+      keyboardType: TextInputType.number,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(11),
+      ],
       style: const TextStyle(color: Colors.white),
-      keyboardType: keyboardType,
       decoration: InputDecoration(
-        labelText: label,
+        labelText: "Phone Number (11 digits)",
         labelStyle: const TextStyle(color: Colors.white70),
         filled: true,
         fillColor: const Color(0xFF1B263B),
@@ -333,7 +383,12 @@ class _AddStaffState extends State<AddStaff> {
           borderSide: const BorderSide(color: Color(0xFF6EACDA), width: 1),
         ),
       ),
-      validator: validator ?? (v) => (v == null || v.isEmpty) ? validatorText : null,
+      validator: (v) {
+        if (v == null || v.isEmpty) return "Please enter phone number";
+        if (v.length != 11) return "Phone number must be 11 digits";
+        if (!v.startsWith('09')) return "Phone number must start with 09";
+        return null;
+      },
     );
   }
 }

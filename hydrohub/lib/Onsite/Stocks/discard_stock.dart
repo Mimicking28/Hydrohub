@@ -39,10 +39,10 @@ class _DiscardStockState extends State<DiscardStock> {
     fetchProductsForStation();
   }
 
-  // ✅ Fetch unique 20-liter products only
+  // ✅ Fetch unique 20-liter products for this station
   Future<void> fetchProductsForStation() async {
     final String apiUrl =
-        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/products/owner/${widget.stationId}"; // ✅ Correct route
 
     try {
       final response = await http.get(Uri.parse(apiUrl));
@@ -55,7 +55,7 @@ class _DiscardStockState extends State<DiscardStock> {
           return size.contains("20") && size.contains("liter");
         }).toList();
 
-        // Remove duplicates by name (Mineral onsite + delivery → one option)
+        // Remove duplicates by name
         final Map<String, int> uniqueProducts = {};
         for (var p in filtered) {
           final name = (p["name"] ?? "").toString();
@@ -88,7 +88,10 @@ class _DiscardStockState extends State<DiscardStock> {
     final response = await http.post(
       Uri.parse(apiUrl),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({"product_id": productId}),
+      body: jsonEncode({
+        "product_id": productId,
+        "staff_id": widget.staffId, // ✅ Required by backend
+      }),
     );
 
     if (response.statusCode == 200) {
@@ -171,8 +174,7 @@ class _DiscardStockState extends State<DiscardStock> {
           context: context,
           builder: (context) => AlertDialog(
             backgroundColor: const Color(0xFF1B263B),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text("⚠️ Not Enough Stock",
                 style: TextStyle(color: Colors.white)),
             content: Text(
@@ -182,8 +184,7 @@ class _DiscardStockState extends State<DiscardStock> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child:
-                    const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+                child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
               ),
             ],
           ),
@@ -203,8 +204,7 @@ class _DiscardStockState extends State<DiscardStock> {
         context: context,
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFF1B263B),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text("🗑️ Stock Discarded",
               style: TextStyle(color: Colors.white)),
           content: Column(
@@ -213,12 +213,9 @@ class _DiscardStockState extends State<DiscardStock> {
             children: [
               Text("Water Type: $selectedType",
                   style: const TextStyle(color: Colors.white)),
-              const Text("Size: 20 Liters",
-                  style: TextStyle(color: Colors.white)),
-              Text("Amount: $amount",
-                  style: const TextStyle(color: Colors.white)),
-              Text("Reason: $finalReason",
-                  style: const TextStyle(color: Colors.white)),
+              const Text("Size: 20 Liters", style: TextStyle(color: Colors.white)),
+              Text("Amount: $amount", style: const TextStyle(color: Colors.white)),
+              Text("Reason: $finalReason", style: const TextStyle(color: Colors.white)),
             ],
           ),
           actions: [

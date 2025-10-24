@@ -6,7 +6,11 @@ import 'package:intl/intl.dart';
 class UpdateDiscard extends StatefulWidget {
   final int stationId;
   final int staffId;
-  const UpdateDiscard({super.key, required this.stationId, required this.staffId});
+  const UpdateDiscard({
+    super.key,
+    required this.stationId,
+    required this.staffId,
+  });
 
   @override
   State<UpdateDiscard> createState() => _UpdateDiscardState();
@@ -17,73 +21,72 @@ class _UpdateDiscardState extends State<UpdateDiscard> {
   List<dynamic> products = [];
   bool isLoading = true;
 
-  List<String> waterTypes = []; // ✅ unique 20L names
+  List<String> waterTypes = [];
   Map<String, int> productMap = {}; // name → product_id
 
   @override
   void initState() {
     super.initState();
-    fetchProductsForStation();
+    fetchAllData();
   }
 
-  // ✅ Fetch unique 20-liter products
-  Future<void> fetchProductsForStation() async {
-    final url = "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+  // ✅ Combined fetch for products + discarded stocks
+  Future<void> fetchAllData() async {
     try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-
-        // keep only 20-liter items and remove duplicates by name
-        final filtered = data.where((p) {
-          final size = (p["size_category"] ?? "").toString().toLowerCase();
-          return size.contains("20") && size.contains("liter");
-        }).toList();
-
-        final Map<String, int> uniqueProducts = {};
-        for (var p in filtered) {
-          final name = (p["name"] ?? "").toString();
-          if (!uniqueProducts.containsKey(name)) {
-            uniqueProducts[name] = p["id"];
-          }
-        }
-
-        setState(() {
-          products = filtered;
-          productMap = uniqueProducts;
-          waterTypes = uniqueProducts.keys.toList();
-        });
-
-        await fetchDiscardedStocks();
-      } else {
-        throw Exception("Failed to fetch products (${response.statusCode})");
-      }
+      await fetchProductsForStation();
+      await fetchDiscardedStocks();
+      setState(() => isLoading = false);
     } catch (e) {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("❌ Failed to load products: $e")));
+          .showSnackBar(SnackBar(content: Text("⚠️ Error: $e")));
+    }
+  }
+
+  // ✅ Fetch all 20L products (archived included)
+  Future<void> fetchProductsForStation() async {
+    final url =
+        "http://10.0.2.2:3000/api/stocks/type/${widget.stationId}/discarded";
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List<dynamic>;
+
+      // Filter only 20-liter products
+      final filtered = data.where((p) {
+        final size = (p["size_category"] ?? "").toString().toLowerCase();
+        return size.contains("20") && size.contains("liter");
+      }).toList();
+
+      // Allow archived — no filtering by is_archived
+      final Map<String, int> allProducts = {};
+      for (var p in filtered) {
+        allProducts[p["product_name"]] = p["product_id"];
+      }
+
+      setState(() {
+        products = filtered;
+        productMap = allProducts;
+        waterTypes = allProducts.keys.toList();
+      });
+    } else {
+      throw Exception("Failed to fetch products (${response.statusCode})");
     }
   }
 
   // ✅ Fetch discarded stock entries
   Future<void> fetchDiscardedStocks() async {
     final url =
-        "http://10.0.2.2:3000/api/stocks/discarded?station_id=${widget.stationId}";
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        setState(() {
-          stocks = data;
-          isLoading = false;
-        });
-      } else {
-        throw Exception("Failed to fetch discarded stocks");
-      }
-    } catch (e) {
-      setState(() => isLoading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("⚠️ Error: $e")));
+        "http://10.0.2.2:3000/api/stocks/type/${widget.stationId}/discarded";
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List<dynamic>;
+      setState(() {
+        stocks = data;
+      });
+    } else {
+      throw Exception("Failed to fetch discarded stocks");
     }
   }
 
@@ -96,12 +99,12 @@ class _UpdateDiscardState extends State<UpdateDiscard> {
           body: json.encode(updatedData));
 
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("✅ Stock updated successfully")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("✅ Discarded stock updated successfully")));
         fetchDiscardedStocks();
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("❌ Failed: ${response.body}")));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("❌ Failed: ${response.body}")));
       }
     } catch (e) {
       ScaffoldMessenger.of(context)
@@ -109,13 +112,25 @@ class _UpdateDiscardState extends State<UpdateDiscard> {
     }
   }
 
-  // ✅ Dialog for updating discard
+  // ✅ Update dialog with reason dropdown
   void showUpdateDialog(Map<String, dynamic> stock) {
-    final currentProduct =
-        products.firstWhere((p) => p["id"] == stock["product_id"], orElse: () => {});
-    String selectedType = currentProduct["name"] ?? "Unknown";
+    final productMatch =
+        products.firstWhere((p) => p["product_id"] == stock["product_id"], orElse: () => {});
+    String selectedType = productMatch["product_name"] ?? "Unknown Product";
     int amount = stock["amount"];
     String reason = stock["reason"] ?? "";
+    String? selectedReason;
+    String otherReason = "";
+
+    final discardReasons = ["Leak Container", "Wrong Input", "Old Stock", "Others"];
+
+    // Pre-fill dropdown if reason matches
+    if (discardReasons.contains(reason)) {
+      selectedReason = reason;
+    } else if (reason.isNotEmpty) {
+      selectedReason = "Others";
+      otherReason = reason;
+    }
 
     showDialog(
       context: context,
@@ -123,80 +138,119 @@ class _UpdateDiscardState extends State<UpdateDiscard> {
         return StatefulBuilder(builder: (context, setDialogState) {
           return AlertDialog(
             backgroundColor: const Color(0xFF1B263B),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text("✏️ Update Discarded Stock",
                 style: TextStyle(color: Colors.white)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Water type dropdown
-                DropdownButton<String>(
-                  value: selectedType,
-                  dropdownColor: const Color(0xFF1B263B),
-                  iconEnabledColor: Colors.white,
-                  isExpanded: true,
-                  underline: const SizedBox(),
-                  items: waterTypes.map((type) {
-                    return DropdownMenuItem(
-                      value: type,
-                      child:
-                          Text(type, style: const TextStyle(color: Colors.white)),
-                    );
-                  }).toList(),
-                  onChanged: (v) => setDialogState(() => selectedType = v!),
-                ),
-                const SizedBox(height: 10),
-                const Text("Size: 20 Liters",
-                    style: TextStyle(color: Colors.white70)),
-                const SizedBox(height: 10),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 🔹 Water type dropdown
+                  DropdownButton<String>(
+                    value: waterTypes.contains(selectedType)
+                        ? selectedType
+                        : (waterTypes.isNotEmpty ? waterTypes.first : null),
+                    hint: const Text("Select Water Type",
+                        style: TextStyle(color: Colors.white)),
+                    dropdownColor: const Color(0xFF1B263B),
+                    iconEnabledColor: Colors.white,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: waterTypes.map((type) {
+                      return DropdownMenuItem(
+                        value: type,
+                        child:
+                            Text(type, style: const TextStyle(color: Colors.white)),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedType = value!;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  const Text("Size: 20 Liters",
+                      style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 10),
 
-                // Amount counter
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
+                  // 🔹 Amount counter
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
                         onPressed: () {
                           setDialogState(() {
                             if (amount > 0) amount--;
                           });
                         },
-                        icon: const Icon(Icons.remove_circle,
-                            color: Colors.white)),
-                    Text("$amount",
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 18)),
-                    IconButton(
+                        icon: const Icon(Icons.remove_circle, color: Colors.white),
+                      ),
+                      Text("$amount",
+                          style: const TextStyle(color: Colors.white, fontSize: 18)),
+                      IconButton(
                         onPressed: () {
-                          setDialogState(() => amount++);
+                          setDialogState(() {
+                            amount++;
+                          });
                         },
-                        icon:
-                            const Icon(Icons.add_circle, color: Colors.white)),
-                  ],
-                ),
-                const SizedBox(height: 10),
-
-                // Reason text field
-                TextField(
-                  controller: TextEditingController(text: reason),
-                  onChanged: (v) => reason = v,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: "Reason",
-                    labelStyle: TextStyle(color: Colors.white70),
-                    enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white54)),
-                    focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.blueAccent)),
+                        icon: const Icon(Icons.add_circle, color: Colors.white),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+
+                  // 🔹 Reason dropdown
+                  DropdownButton<String>(
+                    value: selectedReason,
+                    hint: const Text("Select Reason",
+                        style: TextStyle(color: Colors.white)),
+                    dropdownColor: const Color(0xFF1B263B),
+                    iconEnabledColor: Colors.white,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: discardReasons.map((reason) {
+                      return DropdownMenuItem(
+                        value: reason,
+                        child: Text(reason,
+                            style: const TextStyle(color: Colors.white)),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedReason = value;
+                        if (value != "Others") otherReason = "";
+                      });
+                    },
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // 🔹 "Others" text field
+                  if (selectedReason == "Others")
+                    TextField(
+                      onChanged: (v) => setDialogState(() => otherReason = v),
+                      controller: TextEditingController(text: otherReason),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: "Enter other reason",
+                        hintStyle: const TextStyle(color: Colors.white54),
+                        filled: true,
+                        fillColor: const Color(0xFF0D1B2A),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.white54),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child:
-                    const Text("Cancel", style: TextStyle(color: Colors.redAccent)),
+                child: const Text("Cancel",
+                    style: TextStyle(color: Colors.redAccent)),
               ),
               TextButton(
                 onPressed: () {
@@ -207,11 +261,15 @@ class _UpdateDiscardState extends State<UpdateDiscard> {
                     return;
                   }
 
+                  final finalReason = selectedReason == "Others"
+                      ? (otherReason.isNotEmpty ? otherReason : "Unspecified")
+                      : selectedReason ?? "Unspecified";
+
                   final updatedData = {
                     "product_id": productId,
                     "amount": amount,
                     "stock_type": "discarded",
-                    "reason": reason,
+                    "reason": finalReason,
                     "date": stock["date"],
                     "staff_id": widget.staffId
                   };
@@ -229,12 +287,12 @@ class _UpdateDiscardState extends State<UpdateDiscard> {
     );
   }
 
-  // ✅ Convert UTC to PH time
+  // ✅ Convert UTC → PH
   String formatToPHTime(String utcString) {
     try {
       final utc = DateTime.parse(utcString).toUtc();
-      final phTime = utc.add(const Duration(hours: 8));
-      return DateFormat('yyyy-MM-dd hh:mm a').format(phTime);
+      final ph = utc.add(const Duration(hours: 8));
+      return DateFormat('yyyy-MM-dd hh:mm a').format(ph);
     } catch (_) {
       return utcString;
     }
@@ -259,12 +317,12 @@ class _UpdateDiscardState extends State<UpdateDiscard> {
                       style: TextStyle(color: Colors.white70)))
               : ListView.builder(
                   itemCount: stocks.length,
-                  itemBuilder: (context, i) {
-                    final stock = stocks[i];
-                    final product = products.firstWhere(
-                        (p) => p["id"] == stock["product_id"],
+                  itemBuilder: (context, index) {
+                    final stock = stocks[index];
+                    final productMatch = products.firstWhere(
+                        (p) => p["product_id"] == stock["product_id"],
                         orElse: () => {});
-                    final name = product["name"] ?? "Unknown";
+                    final name = productMatch["product_name"] ?? "Unknown Product";
 
                     return Card(
                       color: const Color(0xFF1B263B),
@@ -294,7 +352,8 @@ class _UpdateDiscardState extends State<UpdateDiscard> {
                         ),
                       ),
                     );
-                  }),
+                  },
+                ),
     );
   }
 }

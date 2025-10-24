@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 class UpdateReturnStock extends StatefulWidget {
   final int stationId;
   final int staffId;
-
   const UpdateReturnStock({
     super.key,
     required this.stationId,
@@ -22,10 +21,10 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
   List<dynamic> products = [];
   bool isLoading = true;
 
-  List<String> waterTypes = []; // ✅ unique 20L names
+  List<String> waterTypes = [];
   Map<String, int> productMap = {}; // name → product_id
 
-  final List<String> reasons = [
+  final List<String> returnReasons = [
     "Damaged",
     "Not Sold",
     "Customer Return",
@@ -35,64 +34,15 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
   @override
   void initState() {
     super.initState();
-    fetchProductsForStation();
+    fetchAllData();
   }
 
-  // ✅ Fetch unique 20-liter products
-  Future<void> fetchProductsForStation() async {
-    final url =
-        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+  // ✅ Fetch products + returned stocks together
+  Future<void> fetchAllData() async {
     try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-
-        // Keep only 20-liter products and remove duplicates
-        final filtered = data.where((p) {
-          final size = (p["size_category"] ?? "").toString().toLowerCase();
-          return size.contains("20") && size.contains("liter");
-        }).toList();
-
-        final Map<String, int> uniqueProducts = {};
-        for (var p in filtered) {
-          final name = (p["name"] ?? "").toString();
-          if (!uniqueProducts.containsKey(name)) {
-            uniqueProducts[name] = p["id"];
-          }
-        }
-
-        setState(() {
-          products = filtered;
-          productMap = uniqueProducts;
-          waterTypes = uniqueProducts.keys.toList();
-        });
-
-        await fetchReturnedStocks();
-      } else {
-        throw Exception("Failed to fetch products (${response.statusCode})");
-      }
-    } catch (e) {
+      await fetchProductsForStation();
+      await fetchReturnedStocks();
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("❌ Failed to load products: $e")));
-    }
-  }
-
-  // ✅ Fetch returned stock entries
-  Future<void> fetchReturnedStocks() async {
-    final url =
-        "http://10.0.2.2:3000/api/stocks/returned?station_id=${widget.stationId}";
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        setState(() {
-          stocks = data;
-          isLoading = false;
-        });
-      } else {
-        throw Exception("Failed to fetch returned stocks");
-      }
     } catch (e) {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context)
@@ -100,35 +50,93 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
     }
   }
 
+  // ✅ Fetch all product records linked to returned stocks
+  Future<void> fetchProductsForStation() async {
+    final url =
+        "http://10.0.2.2:3000/api/stocks/type/${widget.stationId}/returned";
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List<dynamic>;
+
+      // ✅ No size filtering — include all returned items
+      final Map<String, int> allProducts = {};
+      for (var p in data) {
+        allProducts[p["product_name"]] = p["product_id"];
+      }
+
+      setState(() {
+        products = data;
+        productMap = allProducts;
+        waterTypes = allProducts.keys.toList();
+      });
+    } else {
+      throw Exception("Failed to fetch products (${response.statusCode})");
+    }
+  }
+
+  // ✅ Fetch returned stock entries
+  Future<void> fetchReturnedStocks() async {
+    final url =
+        "http://10.0.2.2:3000/api/stocks/type/${widget.stationId}/returned";
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List<dynamic>;
+      setState(() {
+        stocks = data;
+      });
+    } else {
+      throw Exception("Failed to fetch returned stocks");
+    }
+  }
+
   // ✅ Update record
   Future<void> updateStock(int id, Map<String, dynamic> updatedData) async {
     final url = "http://10.0.2.2:3000/api/stocks/$id";
     try {
-      final response = await http.put(Uri.parse(url),
-          headers: {"Content-Type": "application/json"},
-          body: json.encode(updatedData));
+      final response = await http.put(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json"},
+        body: json.encode(updatedData),
+      );
 
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("✅ Stock updated successfully")));
+          const SnackBar(content: Text("✅ Returned stock updated successfully")),
+        );
         fetchReturnedStocks();
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("❌ Failed: ${response.body}")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Failed: ${response.body}")),
+        );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("⚠️ Error updating: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("⚠️ Error updating: $e")),
+      );
     }
   }
 
-  // ✅ Dialog for updating returned stock
+  // ✅ Update Dialog
   void showUpdateDialog(Map<String, dynamic> stock) {
-    final currentProduct =
-        products.firstWhere((p) => p["id"] == stock["product_id"], orElse: () => {});
-    String selectedType = currentProduct["name"] ?? "Unknown";
+    final productMatch = products.firstWhere(
+      (p) => p["product_id"] == stock["product_id"],
+      orElse: () => {},
+    );
+
+    String selectedType = productMatch["product_name"] ?? "Unknown Product";
     int amount = stock["amount"];
-    String selectedReason = stock["reason"] ?? "Customer Return";
+    String reason = stock["reason"] ?? "";
+    String? selectedReason;
+    String otherReason = "";
+
+    if (returnReasons.contains(reason)) {
+      selectedReason = reason;
+    } else if (reason.isNotEmpty) {
+      selectedReason = "Other";
+      otherReason = reason;
+    }
 
     showDialog(
       context: context,
@@ -137,75 +145,111 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
           return AlertDialog(
             backgroundColor: const Color(0xFF1B263B),
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(20),
+            ),
             title: const Text("✏️ Update Returned Stock",
                 style: TextStyle(color: Colors.white)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Water type dropdown
-                DropdownButton<String>(
-                  value: selectedType,
-                  dropdownColor: const Color(0xFF1B263B),
-                  iconEnabledColor: Colors.white,
-                  isExpanded: true,
-                  underline: const SizedBox(),
-                  items: waterTypes.map((type) {
-                    return DropdownMenuItem(
-                      value: type,
-                      child: Text(type,
-                          style: const TextStyle(color: Colors.white)),
-                    );
-                  }).toList(),
-                  onChanged: (v) => setDialogState(() => selectedType = v!),
-                ),
-                const SizedBox(height: 10),
-                const Text("Size: 20 Liters",
-                    style: TextStyle(color: Colors.white70)),
-                const SizedBox(height: 10),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 🔹 Product Dropdown
+                  DropdownButton<String>(
+                    value: waterTypes.contains(selectedType)
+                        ? selectedType
+                        : (waterTypes.isNotEmpty ? waterTypes.first : null),
+                    hint: const Text("Select Product",
+                        style: TextStyle(color: Colors.white)),
+                    dropdownColor: const Color(0xFF1B263B),
+                    iconEnabledColor: Colors.white,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: waterTypes.map((type) {
+                      return DropdownMenuItem(
+                        value: type,
+                        child:
+                            Text(type, style: const TextStyle(color: Colors.white)),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedType = value!;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 10),
 
-                // Amount counter
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
+                  // 🔹 Amount Counter
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
                         onPressed: () {
                           setDialogState(() {
                             if (amount > 0) amount--;
                           });
                         },
-                        icon: const Icon(Icons.remove_circle,
-                            color: Colors.white)),
-                    Text("$amount",
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 18)),
-                    IconButton(
+                        icon: const Icon(Icons.remove_circle, color: Colors.white),
+                      ),
+                      Text("$amount",
+                          style: const TextStyle(color: Colors.white, fontSize: 18)),
+                      IconButton(
                         onPressed: () {
-                          setDialogState(() => amount++);
+                          setDialogState(() {
+                            amount++;
+                          });
                         },
-                        icon:
-                            const Icon(Icons.add_circle, color: Colors.white)),
-                  ],
-                ),
-                const SizedBox(height: 10),
+                        icon: const Icon(Icons.add_circle, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
 
-                // Reason dropdown
-                DropdownButton<String>(
-                  value: selectedReason,
-                  dropdownColor: const Color(0xFF1B263B),
-                  iconEnabledColor: Colors.white,
-                  isExpanded: true,
-                  underline: const SizedBox(),
-                  items: reasons.map((reason) {
-                    return DropdownMenuItem(
-                      value: reason,
-                      child: Text(reason,
-                          style: const TextStyle(color: Colors.white)),
-                    );
-                  }).toList(),
-                  onChanged: (v) => setDialogState(() => selectedReason = v!),
-                ),
-              ],
+                  // 🔹 Reason Dropdown
+                  DropdownButton<String>(
+                    value: selectedReason,
+                    hint: const Text("Select Reason",
+                        style: TextStyle(color: Colors.white)),
+                    dropdownColor: const Color(0xFF1B263B),
+                    iconEnabledColor: Colors.white,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: returnReasons.map((r) {
+                      return DropdownMenuItem(
+                        value: r,
+                        child:
+                            Text(r, style: const TextStyle(color: Colors.white)),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedReason = value;
+                        if (value != "Other") otherReason = "";
+                      });
+                    },
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // 🔹 "Other" text field
+                  if (selectedReason == "Other")
+                    TextField(
+                      onChanged: (v) => setDialogState(() => otherReason = v),
+                      controller: TextEditingController(text: otherReason),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: "Enter other reason",
+                        hintStyle: const TextStyle(color: Colors.white54),
+                        filled: true,
+                        fillColor: const Color(0xFF0D1B2A),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.white54),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -222,11 +266,15 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
                     return;
                   }
 
+                  final finalReason = selectedReason == "Other"
+                      ? (otherReason.isNotEmpty ? otherReason : "Unspecified")
+                      : selectedReason ?? "Unspecified";
+
                   final updatedData = {
                     "product_id": productId,
                     "amount": amount,
                     "stock_type": "returned",
-                    "reason": selectedReason,
+                    "reason": finalReason,
                     "date": stock["date"],
                     "staff_id": widget.staffId
                   };
@@ -248,8 +296,8 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
   String formatToPHTime(String utcString) {
     try {
       final utc = DateTime.parse(utcString).toUtc();
-      final phTime = utc.add(const Duration(hours: 8));
-      return DateFormat('yyyy-MM-dd hh:mm a').format(phTime);
+      final ph = utc.add(const Duration(hours: 8));
+      return DateFormat('yyyy-MM-dd hh:mm a').format(ph);
     } catch (_) {
       return utcString;
     }
@@ -274,12 +322,14 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
                       style: TextStyle(color: Colors.white70)))
               : ListView.builder(
                   itemCount: stocks.length,
-                  itemBuilder: (context, i) {
-                    final stock = stocks[i];
-                    final product = products.firstWhere(
-                        (p) => p["id"] == stock["product_id"],
-                        orElse: () => {});
-                    final name = product["name"] ?? "Unknown";
+                  itemBuilder: (context, index) {
+                    final stock = stocks[index];
+                    final productMatch = products.firstWhere(
+                      (p) => p["product_id"] == stock["product_id"],
+                      orElse: () => {},
+                    );
+                    final name =
+                        productMatch["product_name"] ?? "Unknown Product";
 
                     return Card(
                       color: const Color(0xFF1B263B),
@@ -287,10 +337,11 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
                           vertical: 8, horizontal: 12),
                       child: ListTile(
                         title: Text(
-                          "$name - 20 Liters",
+                          name,
                           style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold),
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         subtitle: Text(
                           "Amount: ${stock["amount"]}\n"
@@ -310,7 +361,8 @@ class _UpdateReturnStockState extends State<UpdateReturnStock> {
                         ),
                       ),
                     );
-                  }),
+                  },
+                ),
     );
   }
 }

@@ -25,7 +25,7 @@ class _StockLogsState extends State<StockLogs> {
   // ✅ Fetch all stock logs for this station
   Future<void> fetchStocks() async {
     final String apiUrl =
-        "http://10.0.2.2:3000/api/stocks?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/stocks/owner/${widget.stationId}";  
     try {
       final response = await http.get(Uri.parse(apiUrl));
 

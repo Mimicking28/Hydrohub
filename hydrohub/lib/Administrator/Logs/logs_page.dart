@@ -3,9 +3,10 @@ import 'package:hydrohub/Administrator/Logs/order_logs.dart';
 import 'package:hydrohub/Administrator/Logs/product_logs.dart';
 import 'package:hydrohub/Administrator/Logs/sale_logs.dart';
 import 'package:hydrohub/Administrator/Logs/stock_logs.dart';
+import 'package:hydrohub/Administrator/profile.dart';
 import '../../../widgets/custom_menu_button.dart';
 import '../home_page.dart';
-
+import 'package:hydrohub/Sessions/admin_session.dart';
 
 
 class LogsPage extends StatelessWidget {
@@ -69,9 +70,16 @@ class LogsPage extends StatelessWidget {
                   Align(
                     alignment: Alignment.topRight,
                     child: IconButton(
-                      onPressed: () {
-                        // TODO: Add profile page navigation
-                      },
+                     onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                            builder: (context) => AdminProfilePage(
+                            adminId: AdminSession.adminId!, // 👈 Pass current admin’s ID
+                          ),
+                        ),
+                          );
+                        },
                       icon: const Icon(
                         Icons.account_circle,
                         size: 35,
@@ -140,7 +148,7 @@ class LogsPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   CustomMenuButton(
-                    icon: Icons.local_shipping,
+                    icon: Icons.inventory,
                     label: "Inventory Logs",
                     onPressed: () {
                       Navigator.push(
@@ -151,7 +159,7 @@ class LogsPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   CustomMenuButton(
-                    icon: Icons.local_shipping,
+                    icon: Icons.menu,
                     label: "Product Logs",   
                     onPressed: () {
                       Navigator.push(

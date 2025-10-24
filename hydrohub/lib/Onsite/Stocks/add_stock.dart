@@ -18,7 +18,7 @@ class _AddStockState extends State<AddStock> {
   int amount = 0;
 
   List<dynamic> products = [];
-  List<String> waterTypes = []; // ✅ Unique 20L product names
+  List<String> waterTypes = []; // ✅ Product names
   Map<String, int> productMap = {}; // Maps type → product_id
   bool isLoading = true;
 
@@ -28,37 +28,47 @@ class _AddStockState extends State<AddStock> {
     fetchProductsForStation();
   }
 
-  // ✅ Fetch unique 20-liter products (ignore type = onsite/delivery)
+  // ✅ Fetch only ACTIVE DELIVERY products (20L only, duplicates allowed)
   Future<void> fetchProductsForStation() async {
     final String apiUrl =
-        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}";
+        "http://10.0.2.2:3000/api/products?station_id=${widget.stationId}&type=delivery";
 
     try {
       final response = await http.get(Uri.parse(apiUrl));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
 
-        // 🔹 Keep only 20L products
+        // 🔹 Filter: delivery type + 20 liters + active only
         final filtered = data.where((p) {
+          final type = (p["type"] ?? "").toString().toLowerCase().trim();
           final size = (p["size_category"] ?? "").toString().toLowerCase();
-          return size.contains("20") && size.contains("liter");
+          final archived = p["is_archived"];
+
+          final bool isActive = (archived == false ||
+              archived == 0 ||
+              archived == null ||
+              archived.toString().toLowerCase() == "false");
+
+          return type == "delivery" &&
+              size.contains("20") &&
+              size.contains("liter") &&
+              isActive;
         }).toList();
 
-        // 🔹 Remove duplicates by name (e.g., "Mineral" appears only once)
-        final Map<String, int> uniqueProducts = {};
+        // 🔹 Build name → product_id map (duplicates okay)
+        final Map<String, int> nameToId = {};
         for (var p in filtered) {
-          final name = (p["name"] ?? "").toString();
-          if (!uniqueProducts.containsKey(name)) {
-            uniqueProducts[name] = p["id"];
-          }
+          nameToId[p["name"]] = p["id"];
         }
 
         setState(() {
           products = filtered;
-          productMap = uniqueProducts;
-          waterTypes = uniqueProducts.keys.toList();
+          productMap = nameToId;
+          waterTypes = nameToId.keys.toList();
           isLoading = false;
         });
+
+        print("✅ Active 20L Delivery products loaded: ${products.length}");
       } else {
         throw Exception("Failed to fetch products");
       }
@@ -215,10 +225,10 @@ class _AddStockState extends State<AddStock> {
 
                     const SizedBox(height: 40),
 
-                    // 🔹 Water Type Dropdown (unique 20L)
+                    // 🔹 Water Type Dropdown
                     if (waterTypes.isEmpty)
                       const Center(
-                        child: Text("No 20-Liter products available",
+                        child: Text("No active 20L delivery products available",
                             style: TextStyle(color: Colors.white70)),
                       )
                     else

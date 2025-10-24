@@ -22,7 +22,7 @@ class _StockLogsState extends State<StockLogs> {
 
   // ✅ Fetch all stock logs (Admin - all stations)
   Future<void> fetchStocks() async {
-    const String apiUrl = "http://10.0.2.2:3000/api/stocks";
+    const String apiUrl = "http://10.0.2.2:3000/api/stocks/admin";
     try {
       final response = await http.get(Uri.parse(apiUrl));
 

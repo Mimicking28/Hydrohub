@@ -99,7 +99,7 @@ class _AddProductState extends State<AddProduct> {
     try {
       var request = http.MultipartRequest(
         "POST",
-        Uri.parse("http://10.0.2.2:3000/api/products"),
+        Uri.parse("http://10.0.2.2:3000/api/products/owner"),
       );
 
       request.fields["name"] = selectedProduct!;
