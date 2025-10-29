@@ -29,6 +29,7 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
     });
   }
 
+  // ✅ Get current position
   Future<Position?> _getPosition() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -44,9 +45,11 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
     if (permission == LocationPermission.deniedForever) return null;
 
     return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
+      desiredAccuracy: LocationAccuracy.high,
+    );
   }
 
+  // ✅ Fetch stations from backend
   Future<void> _fetchStations() async {
     try {
       final res = await http.get(Uri.parse("http://10.0.2.2:3000/api/station"));
@@ -79,6 +82,7 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
     }
   }
 
+  // ✅ Bottom nav actions
   void _onTapNav(int index) {
     setState(() => _selectedIndex = index);
     if (index == 0) return;
@@ -111,24 +115,35 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
       backgroundColor: bg,
       appBar: AppBar(
         backgroundColor: card,
-        centerTitle: true,
         elevation: 1,
+        centerTitle: true,
         title: const Text(
           "HydroHub",
           style: TextStyle(
-            fontWeight: FontWeight.bold,
             color: Colors.white,
+            fontWeight: FontWeight.bold,
             letterSpacing: 0.5,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CustomerProfilePage()),
+              );
+            },
+          ),
+        ],
       ),
+
+      // 🧭 Station list
       body: isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: primary),
-            )
+          ? const Center(child: CircularProgressIndicator(color: primary))
           : RefreshIndicator(
-              onRefresh: _fetchStations,
               color: primary,
+              onRefresh: _fetchStations,
               child: ListView.builder(
                 padding: const EdgeInsets.all(14),
                 itemCount: stations.length,
@@ -156,6 +171,7 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                             builder: (context) => StationProductsPage(
                               stationId: s['station_id'],
                               stationName: s['station_name'],
+                              stationData: s, // ✅ Pass full station info
                             ),
                           ),
                         );
@@ -163,7 +179,7 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 🖼 Station Photo
+                          // 🖼 Station image
                           ClipRRect(
                             borderRadius: const BorderRadius.vertical(
                                 top: Radius.circular(16)),
@@ -184,7 +200,7 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                             ),
                           ),
 
-                          // 📄 Station Info
+                          // 📄 Station details
                           Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
@@ -194,8 +210,8 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                                   s['station_name'] ?? "Unnamed Station",
                                   style: const TextStyle(
                                     color: Colors.white,
-                                    fontWeight: FontWeight.bold,
                                     fontSize: 16,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -205,6 +221,35 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                                       color: Colors.white70, fontSize: 13),
                                 ),
                                 const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.access_time,
+                                        color: primary, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      "Open: ${s['opening_time'] ?? 'Unknown'} - ${s['closing_time'] ?? 'Unknown'}",
+                                      style: const TextStyle(
+                                          color: Colors.white70, fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.calendar_month,
+                                        color: primary, size: 16),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        "Days: ${(s['working_days'] as List?)?.join(', ') ?? 'Not set'}",
+                                        style: const TextStyle(
+                                            color: Colors.white70, fontSize: 13),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
                                 Row(
                                   children: [
                                     const Icon(Icons.location_on,
@@ -229,6 +274,8 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                 },
               ),
             ),
+
+      // 🔽 Bottom navigation
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: card,
         currentIndex: _selectedIndex,
