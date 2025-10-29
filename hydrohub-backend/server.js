@@ -23,6 +23,10 @@ app.use("/api/sales", require("./routes/sales"));
 app.use("/api/stocks", require("./routes/stocks"));
 app.use("/api/accounts", require("./routes/accounts"));
 app.use("/api/login", require("./routes/login"));
+app.use("/api/station", require("./routes/stations")); 
+app.use("/api/customers", require("./routes/customers"));
+
+
 // Error handler
 app.use((err, req, res, next) => {
   console.error("❌ Server error:", err.stack);

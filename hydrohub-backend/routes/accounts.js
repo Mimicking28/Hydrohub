@@ -631,4 +631,149 @@ router.put("/staff/status/:id", async (req, res) => {
   }
 });
 
+// ================================Customer===================================================
+
+// =======================================================
+// 🧾 REGISTER CUSTOMER ACCOUNT
+// =======================================================
+router.post("/customer/register", async (req, res) => {
+  try {
+    const { first_name, last_name, email, phone_number, password } = req.body;
+
+    // Validate input fields
+    if (!first_name || !last_name || !email || !phone_number || !password) {
+      return res.status(400).json({ success: false, error: "All fields are required." });
+    }
+
+    // Check if email already exists
+    const checkEmail = await pool.query(
+      "SELECT * FROM customers WHERE email = $1",
+      [email]
+    );
+    if (checkEmail.rows.length > 0) {
+      return res.status(400).json({ success: false, error: "Email already registered." });
+    }
+
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insert into database
+    await pool.query(
+      `INSERT INTO customers (first_name, last_name, email, phone_number, password)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [first_name, last_name, email, phone_number, hashedPassword]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "✅ Customer account created successfully.",
+    });
+  } catch (err) {
+    console.error("❌ Error registering customer:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Server error. Please try again later.",
+    });
+  }
+});
+// =======================================================
+// 🔐 CUSTOMER LOGIN
+// =======================================================
+router.post("/customer/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password)
+      return res.status(400).json({ success: false, error: "Email and password are required." });
+
+    // Find the customer by email
+    const result = await pool.query("SELECT * FROM customers WHERE email = $1", [email]);
+
+    if (result.rows.length === 0)
+      return res.status(401).json({ success: false, error: "Invalid email or password." });
+
+    const customer = result.rows[0];
+    const match = await bcrypt.compare(password, customer.password);
+
+    if (!match)
+      return res.status(401).json({ success: false, error: "Invalid email or password." });
+
+    // ✅ Return successful login
+    res.status(200).json({
+      success: true,
+      message: "✅ Login successful.",
+      customer: {
+        customer_id: customer.customer_id,
+        first_name: customer.first_name,
+        last_name: customer.last_name,
+        email: customer.email,
+        phone_number: customer.phone_number,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Error logging in customer:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Server error while logging in customer.",
+    });
+  }
+});
+
+// =======================================================
+// 🔹 GET CUSTOMER PROFILE BY ID
+// =======================================================
+router.get("/customers/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT customer_id, first_name, last_name, email, phone_number, address, latitude, longitude
+       FROM customers
+       WHERE customer_id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0)
+      return res.status(404).json({ success: false, error: "Customer not found." });
+
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error("❌ Error fetching customer profile:", err.message);
+    res.status(500).json({ success: false, error: "Server error fetching customer profile." });
+  }
+});
+
+// =======================================================
+// 📍 UPDATE CUSTOMER ADDRESS
+// =======================================================
+router.put("/customer/update-address", async (req, res) => {
+  try {
+    const { customer_id, address, latitude, longitude } = req.body;
+
+    if (!customer_id || !address || !latitude || !longitude) {
+      return res.status(400).json({ success: false, error: "Missing fields" });
+    }
+
+    // ✅ Update customer's address, latitude, and longitude
+    await pool.query(
+      `
+      UPDATE customers 
+      SET address = $1, latitude = $2, longitude = $3
+      WHERE customer_id = $4
+      `,
+      [address, latitude, longitude, customer_id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "✅ Address updated successfully.",
+    });
+  } catch (err) {
+    console.error("❌ Error updating address:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Server error updating address.",
+    });
+  }
+});
+
 module.exports = router;

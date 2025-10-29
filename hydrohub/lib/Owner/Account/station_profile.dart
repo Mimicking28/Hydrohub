@@ -30,10 +30,18 @@ class _StationProfilePageState extends State<StationProfile> {
   List<String> workingDays = [];
   LatLng? _selectedLocation;
   File? _profileImage;
+  String? _profileImageUrl;
 
   bool isLoading = true;
   bool hasData = false;
   bool isEditMode = false;
+
+  GoogleMapController? _googleMapController;
+
+  final LatLngBounds tagbilaranBounds = LatLngBounds(
+    southwest: LatLng(9.6280, 123.8200),
+    northeast: LatLng(9.6800, 123.8800),
+  );
 
   @override
   void initState() {
@@ -41,6 +49,9 @@ class _StationProfilePageState extends State<StationProfile> {
     fetchStationDetails();
   }
 
+  // ===========================
+  // 🔹 FETCH STATION DETAILS
+  // ===========================
   Future<void> fetchStationDetails() async {
     try {
       final response = await http
@@ -48,34 +59,47 @@ class _StationProfilePageState extends State<StationProfile> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data != null && data.isNotEmpty) {
-          setState(() {
-            hasData = true;
-            _name.text = data['station_name'] ?? '';
-            _address.text = data['address'] ?? '';
-            _contact.text = data['contact_number'] ?? '';
-            _description.text = data['description'] ?? '';
-            workingDays = List<String>.from(data['working_days'] ?? []);
-            if (data['opening_time'] != null) {
-              _openTime = _parseTime(data['opening_time']);
-            }
-            if (data['closing_time'] != null) {
-              _closeTime = _parseTime(data['closing_time']);
-            }
-            if (data['latitude'] != null && data['longitude'] != null) {
-              _selectedLocation = LatLng(
-                double.parse(data['latitude'].toString()),
-                double.parse(data['longitude'].toString()),
-              );
-            }
-            isLoading = false;
-          });
-        } else {
-          setState(() {
-            isLoading = false;
+
+        setState(() {
+          _name.text = data['station_name'] ?? '';
+          _contact.text = data['contact_number'] ?? '';
+          _address.text = data['address'] ?? '';
+          _description.text = data['description'] ?? '';
+          workingDays = List<String>.from(data['working_days'] ?? []);
+
+          if (data['opening_time'] != null) {
+            _openTime = _parseTime(data['opening_time']);
+          }
+          if (data['closing_time'] != null) {
+            _closeTime = _parseTime(data['closing_time']);
+          }
+
+          if (data['latitude'] != null && data['longitude'] != null) {
+            _selectedLocation = LatLng(
+              double.parse(data['latitude'].toString()),
+              double.parse(data['longitude'].toString()),
+            );
+          }
+
+          // ✅ Profile picture loading
+          if (data['profile_picture'] != null &&
+              data['profile_picture'].toString().isNotEmpty) {
+            _profileImageUrl =
+                "http://10.0.2.2:3000/uploads/${data['profile_picture']}";
+          }
+
+          // ✅ Simplified logic
+          hasData = true;
+          isEditMode = false;
+
+          // Optional: only force edit if truly incomplete
+          if ((data['address'] == null || data['address'].isEmpty) &&
+              (data['latitude'] == null || data['longitude'] == null)) {
             isEditMode = true;
-          });
-        }
+          }
+
+          isLoading = false;
+        });
       } else {
         setState(() => isLoading = false);
       }
@@ -90,12 +114,18 @@ class _StationProfilePageState extends State<StationProfile> {
     return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
   }
 
+  // ===========================
+  // 🔹 IMAGE PICKER
+  // ===========================
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked != null) setState(() => _profileImage = File(picked.path));
   }
 
+  // ===========================
+  // 🔹 TIME PICKER
+  // ===========================
   Future<void> _selectTime(bool isOpening) async {
     final picked = await showTimePicker(
       context: context,
@@ -112,7 +142,18 @@ class _StationProfilePageState extends State<StationProfile> {
     }
   }
 
+  // ===========================
+  // 🔹 MAP LOCATION SELECT
+  // ===========================
   Future<void> _onMapTap(LatLng pos) async {
+    if (!tagbilaranBounds.contains(pos)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text("Please select a location within Tagbilaran City")),
+      );
+      return;
+    }
+
     List<Placemark> placemarks =
         await placemarkFromCoordinates(pos.latitude, pos.longitude);
     if (placemarks.isNotEmpty) {
@@ -123,39 +164,39 @@ class _StationProfilePageState extends State<StationProfile> {
     setState(() => _selectedLocation = pos);
   }
 
-  Widget _buildDayButton(String day) {
-    final selected = workingDays.contains(day);
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          if (selected) {
-            workingDays.remove(day);
-          } else {
-            workingDays.add(day);
-          }
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF6EACDA) : const Color(0xFF1B263B),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? const Color(0xFF6EACDA) : Colors.white24,
-          ),
-        ),
-        child: Text(
-          day,
-          style: TextStyle(
-            color: selected ? Colors.black : Colors.white70,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
+  // ===========================
+  // 🔹 ADDRESS → LOCATION
+  // ===========================
+  Future<void> _locateAddress(String address) async {
+    if (address.isEmpty) return;
+    try {
+      List<Location> locations = await locationFromAddress(address);
+      if (locations.isNotEmpty) {
+        final loc = locations.first;
+        final LatLng newPos = LatLng(loc.latitude, loc.longitude);
+
+        if (!tagbilaranBounds.contains(newPos)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text("Please enter a location within Tagbilaran City")),
+          );
+          return;
+        }
+
+        setState(() => _selectedLocation = newPos);
+        _googleMapController?.animateCamera(CameraUpdate.newLatLng(newPos));
+      }
+    } catch (e) {
+      debugPrint("Geocoding failed: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Unable to find that address")),
+      );
+    }
   }
 
+  // ===========================
+  // 🔹 SAVE / UPDATE PROFILE
+  // ===========================
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => isLoading = true);
@@ -192,6 +233,7 @@ class _StationProfilePageState extends State<StationProfile> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Profile saved successfully!")),
       );
+      await fetchStationDetails();
       setState(() {
         isEditMode = false;
         hasData = true;
@@ -203,6 +245,9 @@ class _StationProfilePageState extends State<StationProfile> {
     }
   }
 
+  // ===========================
+  // 🔹 UI BUILD
+  // ===========================
   @override
   Widget build(BuildContext context) {
     const Color darkBlue = Color(0xFF021526);
@@ -216,7 +261,8 @@ class _StationProfilePageState extends State<StationProfile> {
         title: const Text("Station Profile"),
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF6EACDA)))
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF6EACDA)))
           : Padding(
               padding: const EdgeInsets.all(16),
               child: AnimatedSwitcher(
@@ -239,6 +285,9 @@ class _StationProfilePageState extends State<StationProfile> {
     );
   }
 
+  // ===========================
+  // 🔹 EDIT FORM
+  // ===========================
   Widget _buildEditForm(Color accentBlue) {
     return SingleChildScrollView(
       child: Form(
@@ -249,33 +298,49 @@ class _StationProfilePageState extends State<StationProfile> {
               onTap: _pickImage,
               child: CircleAvatar(
                 radius: 55,
-                backgroundColor: accentBlue.withOpacity(0.2),
-                backgroundImage:
-                    _profileImage != null ? FileImage(_profileImage!) : null,
-                child: _profileImage == null
-                    ? const Icon(Icons.camera_alt, color: Colors.white54, size: 40)
+                backgroundColor: accentBlue.withValues(alpha: 0.2),
+                backgroundImage: _profileImage != null
+                    ? FileImage(_profileImage!)
+                    : (_profileImageUrl != null
+                        ? NetworkImage(_profileImageUrl!) as ImageProvider
+                        : null),
+                child: _profileImage == null && _profileImageUrl == null
+                    ? const Icon(Icons.camera_alt,
+                        color: Colors.white54, size: 40)
                     : null,
               ),
             ),
             const SizedBox(height: 25),
-            _buildTextField(_name, "Station Name", Icons.store),
-            const SizedBox(height: 10),
-            _buildTextField(_address, "Address", Icons.location_on),
+            _buildTextField(_name, "Station Name", Icons.store,
+                readOnly: true),
             const SizedBox(height: 10),
             _buildTextField(_contact, "Contact Number", Icons.phone),
             const SizedBox(height: 10),
-            _buildTextField(_description, "Description", Icons.text_snippet, maxLines: 2),
+            _buildTextField(
+              _address,
+              "Address",
+              Icons.location_on,
+              onChanged: (val) {
+                Future.delayed(const Duration(milliseconds: 800), () {
+                  if (val == _address.text) _locateAddress(val);
+                });
+              },
+            ),
+            const SizedBox(height: 10),
+            _buildTextField(_description, "Description", Icons.text_snippet,
+                maxLines: 2),
             const SizedBox(height: 20),
-
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text("Tap on the map to set location",
+              child: Text("Tap or drag the pin to set location",
                   style: TextStyle(color: Colors.white70)),
             ),
             const SizedBox(height: 10),
             SizedBox(
               height: 220,
               child: GoogleMap(
+                onMapCreated: (controller) =>
+                    _googleMapController = controller,
                 initialCameraPosition: const CameraPosition(
                   target: LatLng(9.6423, 123.8531),
                   zoom: 13,
@@ -285,13 +350,26 @@ class _StationProfilePageState extends State<StationProfile> {
                     ? {}
                     : {
                         Marker(
-                            markerId: const MarkerId("selected"),
-                            position: _selectedLocation!)
+                          markerId: const MarkerId("selected"),
+                          position: _selectedLocation!,
+                          draggable: true,
+                          onDragEnd: (newPos) async {
+                            _selectedLocation = newPos;
+                            List<Placemark> placemarks =
+                                await placemarkFromCoordinates(
+                                    newPos.latitude, newPos.longitude);
+                            if (placemarks.isNotEmpty) {
+                              final place = placemarks.first;
+                              _address.text =
+                                  "${place.street ?? ''}, ${place.locality ?? ''}, ${place.country ?? ''}";
+                            }
+                            setState(() {});
+                          },
+                        )
                       },
               ),
             ),
             const SizedBox(height: 20),
-
             const Align(
               alignment: Alignment.centerLeft,
               child: Text("Working Days",
@@ -304,12 +382,12 @@ class _StationProfilePageState extends State<StationProfile> {
               ],
             ),
             const SizedBox(height: 15),
-
             Row(
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: accentBlue),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: accentBlue),
                     onPressed: () => _selectTime(true),
                     child: Text(_openTime == null
                         ? "Set Opening Time"
@@ -319,7 +397,8 @@ class _StationProfilePageState extends State<StationProfile> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: accentBlue),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: accentBlue),
                     onPressed: () => _selectTime(false),
                     child: Text(_closeTime == null
                         ? "Set Closing Time"
@@ -332,8 +411,8 @@ class _StationProfilePageState extends State<StationProfile> {
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                   backgroundColor: accentBlue,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 40, vertical: 14)),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 40, vertical: 14)),
               icon: const Icon(Icons.save),
               label: const Text("Save Profile"),
               onPressed: _saveProfile,
@@ -345,24 +424,30 @@ class _StationProfilePageState extends State<StationProfile> {
     );
   }
 
+  // ===========================
+  // 🔹 VIEW MODE
+  // ===========================
   Widget _buildProfileView(Color accentBlue) {
     return SingleChildScrollView(
       child: Column(
         children: [
           CircleAvatar(
             radius: 60,
-            backgroundColor: accentBlue.withOpacity(0.2),
-            backgroundImage:
-                _profileImage != null ? FileImage(_profileImage!) : null,
-            child: _profileImage == null
+            backgroundColor: accentBlue.withValues(alpha: 0.2),
+            backgroundImage: _profileImage != null
+                ? FileImage(_profileImage!)
+                : (_profileImageUrl != null
+                    ? NetworkImage(_profileImageUrl!) as ImageProvider
+                    : null),
+            child: _profileImage == null && _profileImageUrl == null
                 ? const Icon(Icons.store_mall_directory,
                     size: 60, color: Colors.white70)
                 : null,
           ),
           const SizedBox(height: 20),
           _buildInfo("Station Name", _name.text),
-          _buildInfo("Address", _address.text),
           _buildInfo("Contact", _contact.text),
+          _buildInfo("Address", _address.text),
           _buildInfo("Description", _description.text),
           _buildInfo("Working Hours",
               "${_openTime?.format(context) ?? '--'} - ${_closeTime?.format(context) ?? '--'}"),
@@ -376,8 +461,9 @@ class _StationProfilePageState extends State<StationProfile> {
                     CameraPosition(target: _selectedLocation!, zoom: 13),
                 markers: {
                   Marker(
-                      markerId: const MarkerId("station"),
-                      position: _selectedLocation!)
+                    markerId: const MarkerId("station"),
+                    position: _selectedLocation!,
+                  ),
                 },
               ),
             ),
@@ -386,13 +472,25 @@ class _StationProfilePageState extends State<StationProfile> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, IconData icon,
-      {int maxLines = 1}) {
+  Widget _buildTextField(TextEditingController controller, String label,
+      IconData icon,
+      {int maxLines = 1,
+      bool readOnly = false,
+      Function(String)? onChanged}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
+      readOnly: readOnly,
       style: const TextStyle(color: Colors.white),
-      validator: (val) => val!.isEmpty ? "Enter $label" : null,
+      validator: (val) {
+        if (!readOnly && val!.isEmpty) return "Enter $label";
+        if (label == "Contact Number" &&
+            !RegExp(r'^[0-9+\- ]+$').hasMatch(val ?? '')) {
+          return "Enter a valid phone number";
+        }
+        return null;
+      },
+      onChanged: onChanged,
       decoration: InputDecoration(
         prefixIcon: Icon(icon, color: const Color(0xFF6EACDA)),
         labelText: label,
@@ -401,7 +499,8 @@ class _StationProfilePageState extends State<StationProfile> {
         fillColor: const Color(0xFF1B263B),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF6EACDA), width: 1.5),
+          borderSide:
+              const BorderSide(color: Color(0xFF6EACDA), width: 1.5),
         ),
       ),
     );
@@ -427,6 +526,32 @@ class _StationProfilePageState extends State<StationProfile> {
           Text(value.isNotEmpty ? value : "—",
               style: const TextStyle(color: Colors.white, fontSize: 15)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDayButton(String day) {
+    final selected = workingDays.contains(day);
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          selected ? workingDays.remove(day) : workingDays.add(day);
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF6EACDA) : const Color(0xFF1B263B),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? const Color(0xFF6EACDA) : Colors.white24,
+          ),
+        ),
+        child: Text(day,
+            style: TextStyle(
+                color: selected ? Colors.black : Colors.white70,
+                fontWeight: FontWeight.w600)),
       ),
     );
   }

@@ -1,8 +1,9 @@
-// ignore_for_file: unused_element
+// ignore_for_file: unused_element, use_build_context_synchronously
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:hydrohub/Screen/signup_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // HydroHub pages
@@ -11,12 +12,14 @@ import 'package:hydrohub/Administrator/home_page.dart' as admin;
 import 'package:hydrohub/Owner/home_page.dart' as owner;
 import 'package:hydrohub/Onsite/home_page.dart' as onsite;
 import 'package:hydrohub/Delivery/home_page.dart' as delivery;
+import 'package:hydrohub/Customer/home_page.dart'; // ✅ Customer HomePage
 
 // Sessions
 import 'package:hydrohub/Sessions/admin_session.dart';
 import 'package:hydrohub/Sessions/owner_session.dart';
 import 'package:hydrohub/Sessions/onsite_session.dart';
 import 'package:hydrohub/Sessions/delivery_session.dart';
+import 'package:hydrohub/Sessions/customer_session.dart'; // ✅ Add CustomerSession
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -56,9 +59,6 @@ class _LoginPageState extends State<LoginPage> {
     _password.dispose();
     super.dispose();
   }
-
-  int? _asInt(dynamic v) => v is int ? v : int.tryParse('$v');
-  String? _asStr(dynamic v) => v?.toString();
 
   Map<String, dynamic> _safeJson(String body) {
     try {
@@ -132,6 +132,15 @@ class _LoginPageState extends State<LoginPage> {
           );
           _navigateToHome("delivery");
           return;
+        case "customer":
+          CustomerSession.setSession(
+            id: userData["customer_id"],
+            name: "${userData["first_name"]} ${userData["last_name"]}",
+            email: userData["email"],
+            phone: userData["phone_number"],
+          );
+          _navigateToHome("customer");
+          return;
       }
     }
 
@@ -146,6 +155,43 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // ✅ Customer login
+      if (_selectedRole == "Customer") {
+        final res = await http.post(
+          Uri.parse("http://10.0.2.2:3000/api/accounts/customer/login"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({
+            "email": _username.text.trim(),
+            "password": _password.text.trim(),
+          }),
+        );
+
+        final data = _safeJson(res.body);
+
+        if (res.statusCode == 200 && data["success"] == true) {
+          final user = data["customer"];
+          if (_rememberMe) {
+            await prefs.setString("user_role", "customer");
+            await prefs.setString("user_data", jsonEncode(user));
+          }
+
+          CustomerSession.setSession(
+            id: user["customer_id"],
+            name: "${user["first_name"]} ${user["last_name"]}",
+            email: user["email"],
+            phone: user["phone_number"],
+          );
+
+          _navigateToHome("customer");
+        } else {
+          _toast(data["error"] ?? "Invalid credentials.", isError: true);
+        }
+        return;
+      }
+
+      // ✅ Staff/Admin/Owner login
       final res = await http.post(
         Uri.parse("http://10.0.2.2:3000/api/login"),
         headers: {"Content-Type": "application/json"},
@@ -158,8 +204,6 @@ class _LoginPageState extends State<LoginPage> {
       final data = _safeJson(res.body);
 
       if (res.statusCode == 200 && data["success"] == true) {
-        final prefs = await SharedPreferences.getInstance();
-
         if (data.containsKey("admin")) {
           final user = data["admin"];
           if (_rememberMe) {
@@ -238,7 +282,10 @@ class _LoginPageState extends State<LoginPage> {
         next = admin.HomePage();
         break;
       case "owner":
-        next = owner.HomePage(stationId: OwnerSession.stationId!, ownerId: OwnerSession.ownerId!);
+        next = owner.HomePage(
+          stationId: OwnerSession.stationId!,
+          ownerId: OwnerSession.ownerId!,
+        );
         break;
       case "onsite":
         next = onsite.HomePage(
@@ -252,6 +299,9 @@ class _LoginPageState extends State<LoginPage> {
           staffId: DeliverySession.staffId!,
         );
         break;
+      case "customer":
+        next = const CustomerHomePage();
+        break;
       default:
         next = const SplashScreen();
     }
@@ -262,7 +312,8 @@ class _LoginPageState extends State<LoginPage> {
         PageRouteBuilder(
           transitionDuration: const Duration(milliseconds: 600),
           transitionsBuilder: (_, animation, __, child) => FadeTransition(
-            opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+            opacity:
+                CurvedAnimation(parent: animation, curve: Curves.easeInOut),
             child: child,
           ),
           pageBuilder: (_, __, ___) => next,
@@ -274,18 +325,18 @@ class _LoginPageState extends State<LoginPage> {
   // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
-    final primary = const Color(0xFF6EACDA);
-    final bg = const Color(0xFF021526);
+    const primary = Color(0xFF6EACDA);
+    const bg = Color(0xFF021526);
 
     if (_checkingSession) {
       return Scaffold(
         backgroundColor: bg,
-        body: Center(
+        body: const Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(color: Color(0xFF6EACDA)),
-              const SizedBox(height: 20),
+              CircularProgressIndicator(color: Color(0xFF6EACDA)),
+              SizedBox(height: 20),
               Text("Checking session...",
                   style: TextStyle(color: Colors.white70, fontSize: 14)),
             ],
@@ -298,8 +349,9 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _loginForm(Color primary, Color bg) {
-    final card = const Color(0xFF0E1117);
-    final field = const Color(0xFF1B263B);
+    const card = Color(0xFF0E1117);
+    const field = Color(0xFF1B263B);
+
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
@@ -374,7 +426,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  "Sign in to manage your station and team",
+                  "Sign in to manage your station or order water",
                   style: TextStyle(color: Colors.white70, fontSize: 14),
                 ),
               ],
@@ -396,7 +448,13 @@ class _LoginPageState extends State<LoginPage> {
             children: [
               _roleSelector(field, primary),
               const SizedBox(height: 14),
-              _textField("Username", Icons.person_outline, _username, field, primary),
+              _textField(
+                _selectedRole == "Customer" ? "Email" : "Username",
+                Icons.person_outline,
+                _username,
+                field,
+                primary,
+              ),
               const SizedBox(height: 14),
               _passwordField(field, primary),
               if (_selectedRole == "Staff") ...[
@@ -411,11 +469,28 @@ class _LoginPageState extends State<LoginPage> {
                     activeColor: primary,
                     onChanged: (v) => setState(() => _rememberMe = v ?? false),
                   ),
-                  const Text("Remember Me", style: TextStyle(color: Colors.white70)),
+                  const Text("Remember Me",
+                      style: TextStyle(color: Colors.white70)),
                 ],
               ),
               const SizedBox(height: 16),
               _signInButton(primary),
+              if (_selectedRole == "Customer") ...[
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const CustomerSignUpPage()),
+                    );
+                  },
+                  child: const Text(
+                    "Don’t have an account? Sign Up",
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -468,7 +543,8 @@ class _LoginPageState extends State<LoginPage> {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _selectedStaffType,
-          hint: const Text("Select Staff Type", style: TextStyle(color: Colors.white70)),
+          hint: const Text("Select Staff Type",
+              style: TextStyle(color: Colors.white70)),
           dropdownColor: field,
           iconEnabledColor: Colors.white70,
           style: const TextStyle(color: Colors.white),
@@ -481,8 +557,8 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _textField(String label, IconData icon, TextEditingController controller,
-          Color field, Color primary) =>
+  Widget _textField(String label, IconData icon,
+          TextEditingController controller, Color field, Color primary) =>
       TextFormField(
         controller: controller,
         style: const TextStyle(color: Colors.white),
@@ -495,8 +571,12 @@ class _LoginPageState extends State<LoginPage> {
         controller: _password,
         obscureText: _obscure,
         style: const TextStyle(color: Colors.white),
-        decoration:
-            _fieldDecoration("Password", Icons.lock_outline, field, primary).copyWith(
+        decoration: _fieldDecoration(
+          "Password",
+          Icons.lock_outline,
+          field,
+          primary,
+        ).copyWith(
           suffixIcon: IconButton(
             onPressed: () => setState(() => _obscure = !_obscure),
             icon: Icon(
@@ -505,7 +585,8 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
-        validator: (v) => (v == null || v.isEmpty) ? "Please enter password" : null,
+        validator: (v) =>
+            (v == null || v.isEmpty) ? "Please enter password" : null,
       );
 
   Widget _signInButton(Color primary) => SizedBox(
@@ -514,14 +595,17 @@ class _LoginPageState extends State<LoginPage> {
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: primary,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           onPressed: _isLoading ? null : _login,
           child: _isLoading
               ? const CircularProgressIndicator(color: Colors.white)
               : const Text("Sign In",
                   style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white)),
         ),
       );
 
@@ -558,7 +642,7 @@ class _RoleChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = const Color(0xFF6EACDA);
+    const primary = Color(0xFF6EACDA);
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: onTap,
