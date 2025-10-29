@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import 'Onsite_worker/home_page.dart';
+import 'package:hydrohub/Customer/Product/cart.dart';
+import 'package:hydrohub/Customer/Product/order.dart';
+import 'package:hydrohub/Customer/Profile/profile.dart';
+import 'package:hydrohub/Screen/splash_page.dart';
+import 'package:hydrohub/Customer/home_page.dart';
 
 void main() {
   runApp(const HydroHubApp());
@@ -17,7 +21,13 @@ class HydroHubApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         fontFamily: 'Arial',
       ),
-      home: const HomePage(),
+      home: const SplashScreen(),
+      routes: {
+        '/home': (context) => const CustomerHomePage(),
+        '/cart': (context) => const CartPage(),
+        '/orders': (context) => const OrdersPage(),
+        '/profile': (context) => const CustomerProfilePage(),
+      },
     );
   }
 }
